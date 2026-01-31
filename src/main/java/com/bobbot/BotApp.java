@@ -57,6 +57,7 @@ public class BotApp {
                 .addChoice("discord", "discord");
         OptionData inviteTargetId = new OptionData(OptionType.STRING, "target_id", "chat or guild ID", true);
 
+        LOGGER.info("Queueing slash command registration");
         jda.updateCommands()
                 .addCommands(
                         Commands.slash("invitebot", "Get an invite link or info for chat installs")
@@ -73,10 +74,15 @@ public class BotApp {
                                         "Discord channel ID",
                                         true)
                 )
-                .queue();
+                .queue(
+                        success -> LOGGER.info("Slash command registration succeeded"),
+                        failure -> LOGGER.error("Slash command registration failed", failure)
+                );
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-        LOGGER.info("Scheduling background tasks");
+        LOGGER.info("Scheduling background tasks with poll interval {} and leaderboard interval {}",
+                envConfig.pollInterval(),
+                envConfig.leaderboardInterval());
         scheduler.scheduleAtFixedRate(() -> runLevelUpScan(levelUpService, jda),
                 0,
                 envConfig.pollInterval().toSeconds(),
