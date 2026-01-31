@@ -80,11 +80,11 @@ public class JsonStorage {
         try {
             Path file = dataDir.resolve("settings.json");
             if (!Files.exists(file)) {
-                return new BotSettings(null);
+                return new BotSettings(null, "online");
             }
             return mapper.readValue(file.toFile(), BotSettings.class);
         } catch (IOException e) {
-            return new BotSettings(null);
+            return new BotSettings(null, "online");
         } finally {
             lock.readLock().unlock();
         }

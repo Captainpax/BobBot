@@ -8,15 +8,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class BotSettings {
     private final String leaderboardChannelId;
+    private final String botStatus;
 
     /**
      * Create a settings object.
      *
      * @param leaderboardChannelId channel for leaderboard and level-up posts
+     * @param botStatus configured bot presence status
      */
     @JsonCreator
-    public BotSettings(@JsonProperty("leaderboardChannelId") String leaderboardChannelId) {
+    public BotSettings(@JsonProperty("leaderboardChannelId") String leaderboardChannelId,
+                       @JsonProperty("botStatus") String botStatus) {
         this.leaderboardChannelId = leaderboardChannelId;
+        this.botStatus = botStatus;
     }
 
     /**
@@ -27,12 +31,29 @@ public class BotSettings {
     }
 
     /**
+     * @return configured bot presence status
+     */
+    public String getBotStatus() {
+        return botStatus;
+    }
+
+    /**
      * Create a new settings object with the given leaderboard channel ID.
      *
      * @param channelId channel ID
      * @return updated settings
      */
     public BotSettings withLeaderboardChannelId(String channelId) {
-        return new BotSettings(channelId);
+        return new BotSettings(channelId, botStatus);
+    }
+
+    /**
+     * Create a new settings object with the given bot status.
+     *
+     * @param status bot presence status
+     * @return updated settings
+     */
+    public BotSettings withBotStatus(String status) {
+        return new BotSettings(leaderboardChannelId, status);
     }
 }
