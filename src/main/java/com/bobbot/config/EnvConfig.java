@@ -37,7 +37,7 @@ public record EnvConfig(
         ResolvedEnv tokenEnv = firstEnv(env, "discord-token", "discord_token", "DISCORD_TOKEN")
                 .orElseThrow(() -> new IllegalStateException("discord-token, discord_token, or DISCORD_TOKEN env var is required"));
         String token = tokenEnv.value();
-        String superuser = firstEnv(env, "discord-superuser-id", "discord_superuser_id", "DISCORD_SUPERUSER_ID")
+        String superuser = firstEnvValue(env, "discord-superuser-id", "discord_superuser_id", "DISCORD_SUPERUSER_ID")
                 .orElse("");
         Duration leaderboardInterval = parseDuration(env, Duration.ofMinutes(60), "leaderboard-interval", "leaderboard_interval", "LEADERBOARD_INTERVAL");
         Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
