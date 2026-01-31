@@ -52,7 +52,8 @@ public class LevelUpService {
     public PlayerRecord linkPlayer(String discordUserId, String username) throws IOException, InterruptedException {
         Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
         int totalLevel = hiscoreClient.fetchTotalLevel(username);
-        PlayerRecord updated = new PlayerRecord(username, totalLevel, Instant.now(), null);
+        Instant snapshotTime = Instant.now();
+        PlayerRecord updated = new PlayerRecord(username, totalLevel, snapshotTime, null, totalLevel, snapshotTime);
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;
@@ -97,26 +98,38 @@ public class LevelUpService {
      * @return sorted list of updated player records
      */
     public List<PlayerRecord> refreshLevels() {
-        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
-        if (players.isEmpty()) {
+        Map<String, PlayerRecord> refreshed = refreshLevelsWithIds();
+        if (refreshed.isEmpty()) {
             return List.of();
         }
+        List<PlayerRecord> records = new ArrayList<>(refreshed.values());
+        records.sort(Comparator.comparingInt(PlayerRecord::getLastTotalLevel).reversed());
+        return records;
+    }
+
+    /**
+     * Refresh total levels for all linked players with Discord IDs.
+     *
+     * @return updated players keyed by Discord user ID
+     */
+    public Map<String, PlayerRecord> refreshLevelsWithIds() {
+        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
+        if (players.isEmpty()) {
+            return Map.of();
+        }
         Map<String, PlayerRecord> updated = new HashMap<>(players);
-        List<PlayerRecord> refreshed = new ArrayList<>();
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
             PlayerRecord record = entry.getValue();
             try {
                 int totalLevel = hiscoreClient.fetchTotalLevel(record.getUsername());
                 PlayerRecord newRecord = record.withLevel(totalLevel);
                 updated.put(entry.getKey(), newRecord);
-                refreshed.add(newRecord);
             } catch (IOException | InterruptedException e) {
-                refreshed.add(record);
+                // keep existing record
             }
         }
         storage.savePlayers(updated);
-        refreshed.sort(Comparator.comparingInt(PlayerRecord::getLastTotalLevel).reversed());
-        return refreshed;
+        return updated;
     }
 
     /**
