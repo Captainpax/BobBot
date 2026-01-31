@@ -51,7 +51,7 @@ public class LevelUpService {
     public PlayerRecord linkPlayer(String discordUserId, String username) throws IOException, InterruptedException {
         Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
         int totalLevel = hiscoreClient.fetchTotalLevel(username);
-        PlayerRecord updated = new PlayerRecord(username, totalLevel, Instant.now());
+        PlayerRecord updated = new PlayerRecord(username, totalLevel, Instant.now(), null);
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;
@@ -116,6 +116,43 @@ public class LevelUpService {
         storage.savePlayers(updated);
         refreshed.sort(Comparator.comparingInt(PlayerRecord::getLastTotalLevel).reversed());
         return refreshed;
+    }
+
+    /**
+     * Refresh a single player's total level.
+     *
+     * @param discordUserId Discord user ID
+     * @return refreshed player record, or null if not linked
+     * @throws IOException on hiscore lookup failure
+     * @throws InterruptedException on interrupted HTTP requests
+     */
+    public PlayerRecord refreshPlayer(String discordUserId) throws IOException, InterruptedException {
+        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
+        PlayerRecord record = players.get(discordUserId);
+        if (record == null) {
+            return null;
+        }
+        int totalLevel = hiscoreClient.fetchTotalLevel(record.getUsername());
+        PlayerRecord updated = record.withLevel(totalLevel);
+        players.put(discordUserId, updated);
+        storage.savePlayers(players);
+        return updated;
+    }
+
+    /**
+     * Record a leaderboard snapshot for all linked players.
+     */
+    public void recordLeaderboardSnapshot() {
+        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
+        if (players.isEmpty()) {
+            return;
+        }
+        Map<String, PlayerRecord> updated = new HashMap<>();
+        for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
+            PlayerRecord record = entry.getValue();
+            updated.put(entry.getKey(), record.withLeaderboardSnapshot(record.getLastTotalLevel()));
+        }
+        storage.savePlayers(updated);
     }
 
     /**

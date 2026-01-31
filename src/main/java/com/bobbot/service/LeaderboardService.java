@@ -6,6 +6,7 @@ import com.bobbot.storage.PlayerRecord;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 
+import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,6 +59,9 @@ public class LeaderboardService {
                     .append("\n");
         }
         channel.sendMessage(builder.toString()).queue();
+        Instant snapshotTime = Instant.now();
+        storage.saveSettings(settings.withLastLeaderboardTimestamp(snapshotTime));
+        levelUpService.recordLeaderboardSnapshot();
     }
 
     /**
@@ -77,6 +81,15 @@ public class LeaderboardService {
      */
     public boolean isScheduledLeaderboardEnabled() {
         return scheduledEnabled.get();
+    }
+
+    /**
+     * Return the last leaderboard timestamp, if any.
+     *
+     * @return last leaderboard timestamp or null
+     */
+    public Instant getLastLeaderboardTimestamp() {
+        return storage.loadSettings().getLastLeaderboardTimestamp();
     }
 
     /**
