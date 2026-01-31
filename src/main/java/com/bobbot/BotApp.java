@@ -1,6 +1,7 @@
 package com.bobbot;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
@@ -43,7 +44,10 @@ public class BotApp {
         LOGGER.info("Building JDA client");
         JDA jda = JDABuilder.createDefault(envConfig.discordToken(), EnumSet.noneOf(GatewayIntent.class))
                 .setActivity(Activity.playing("OSRS levels"))
-                .addEventListeners(new SlashCommandListener(envConfig, leaderboardService, levelUpService))
+                .addEventListeners(
+                        new SlashCommandListener(envConfig, leaderboardService, levelUpService),
+                        new ReadyNotificationListener(envConfig)
+                )
                 .build()
                 .awaitReady();
         LOGGER.info("JDA client ready");
