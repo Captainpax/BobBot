@@ -1,6 +1,8 @@
 package com.bobbot.discord;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.osrs.OsrsXpTable;
+import com.bobbot.osrs.SkillStat;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
@@ -15,6 +17,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -22,6 +26,7 @@ import java.util.Locale;
  */
 public class SlashCommandListener extends ListenerAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlashCommandListener.class);
+    private static final int DISCORD_MESSAGE_LIMIT = 1800;
     private final EnvConfig envConfig;
     private final LeaderboardService leaderboardService;
     private final LevelUpService levelUpService;
@@ -179,6 +184,7 @@ public class SlashCommandListener extends ListenerAdapter {
                 event.getHook().sendMessage("You haven't linked a player yet. Use /link to get started.").queue();
                 return;
             }
+            List<SkillStat> stats = levelUpService.fetchSkillStats(record.getUsername());
             StringBuilder builder = new StringBuilder();
             builder.append("Stats for ").append(record.getUsername()).append(":\n");
             builder.append("- total level: ").append(record.getLastTotalLevel()).append("\n");
@@ -191,7 +197,32 @@ public class SlashCommandListener extends ListenerAdapter {
             } else {
                 builder.append("- levels gained since last leaderboard: no snapshot yet.\n");
             }
-            event.getHook().sendMessage(builder.toString()).queue();
+            List<String> messages = new ArrayList<>();
+            StringBuilder current = new StringBuilder(builder);
+            if (!stats.isEmpty()) {
+                String skillsHeader = "Skills:\n";
+                if (current.length() + skillsHeader.length() > DISCORD_MESSAGE_LIMIT) {
+                    messages.add(current.toString());
+                    current = new StringBuilder(skillsHeader);
+                } else {
+                    current.append(skillsHeader);
+                }
+                for (SkillStat stat : stats) {
+                    if (stat.skill().isOverall()) {
+                        continue;
+                    }
+                    String line = formatSkillLine(stat);
+                    if (current.length() + line.length() + 1 > DISCORD_MESSAGE_LIMIT) {
+                        messages.add(current.toString());
+                        current = new StringBuilder("Skills (cont.):\n");
+                    }
+                    current.append(line).append("\n");
+                }
+            }
+            messages.add(current.toString());
+            for (String message : messages) {
+                event.getHook().sendMessage(message).queue();
+            }
         } catch (IOException | InterruptedException e) {
             LOGGER.error("Failed to fetch stats for user {}", event.getUser().getId(), e);
             event.getHook().sendMessage("Failed to fetch your latest stats. Try again in a bit.").queue();
@@ -294,5 +325,16 @@ public class SlashCommandListener extends ListenerAdapter {
         String guildId = event.getGuild() != null ? event.getGuild().getId() : "DM";
         LOGGER.debug("Slash command '{}' received from user {} in {}",
                 event.getName(), event.getUser().getId(), guildId);
+    }
+
+    private String formatSkillLine(SkillStat stat) {
+        if (stat.level() < 1) {
+            return String.format("%s: unranked", stat.skill().displayName());
+        }
+        long xpToNext = OsrsXpTable.xpToNextLevel(stat.level(), stat.xp());
+        return String.format(Locale.US, "%s: %d (xp to next: %,d)",
+                stat.skill().displayName(),
+                stat.level(),
+                xpToNext);
     }
 }
