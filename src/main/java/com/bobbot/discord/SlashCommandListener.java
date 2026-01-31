@@ -58,6 +58,7 @@ public class SlashCommandListener extends ListenerAdapter {
             case "setleaderboard" -> handleSetLeaderboard(event);
             case "health" -> handleHealth(event);
             case "power" -> handlePower(event);
+            case "status" -> handleStatus(event);
             default -> event.reply("Unknown command.").setEphemeral(true).queue();
         }
     }
@@ -180,6 +181,25 @@ public class SlashCommandListener extends ListenerAdapter {
         event.reply(message)
                 .setEphemeral(true)
                 .queue(success -> shutdown(event.getJDA(), action, exitCode));
+    }
+
+    /**
+     * Handle the /status command.
+     *
+     * @param event slash command event
+     */
+    private void handleStatus(SlashCommandInteractionEvent event) {
+        if (!isSuperuser(event)) {
+            event.reply("Only the configured superuser can update bot status.")
+                    .setEphemeral(true)
+                    .queue();
+            return;
+        }
+        String status = event.getOption("state").getAsString();
+        String normalized = healthService.updateBotStatus(event.getJDA(), status);
+        event.reply("Bot status set to " + normalized + ".")
+                .setEphemeral(true)
+                .queue();
     }
 
     private void shutdown(JDA jda, String action, int exitCode) {

@@ -1,6 +1,7 @@
 package com.bobbot;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.discord.BotStatus;
 import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.discord.MentionHealthListener;
@@ -11,7 +12,6 @@ import com.bobbot.service.LevelUpService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.OnlineStatus;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
@@ -56,11 +56,12 @@ public class BotApp {
         }
 
         LOGGER.info("Building JDA client");
+        String configuredStatus = BotStatus.normalize(storage.loadSettings().getBotStatus());
         JDA jda;
         try {
             jda = JDABuilder.createDefault(envConfig.discordToken(),
                             EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
-                    .setStatus(OnlineStatus.ONLINE)
+                    .setStatus(BotStatus.toOnlineStatus(configuredStatus))
                     .setActivity(Activity.playing("OSRS levels"))
                     .addEventListeners(
                             new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
@@ -83,6 +84,10 @@ public class BotApp {
         OptionData powerAction = new OptionData(OptionType.STRING, "action", "restart or shutdown", true)
                 .addChoice("restart", "restart")
                 .addChoice("shutdown", "shutdown");
+        OptionData statusState = new OptionData(OptionType.STRING, "state", "online, busy, or offline", true)
+                .addChoice("online", "online")
+                .addChoice("busy", "busy")
+                .addChoice("offline", "offline");
 
         LOGGER.info("Queueing slash command registration");
         EnumSet<InteractionContextType> dmAndGuild = EnumSet.of(
@@ -108,7 +113,9 @@ public class BotApp {
                         Commands.slash("health", "Check bot health and stats")
                                 .setContexts(dmAndGuild),
                         Commands.slash("power", "Restart or shutdown the bot")
-                                .addOptions(powerAction)
+                                .addOptions(powerAction),
+                        Commands.slash("status", "Update the bot presence status")
+                                .addOptions(statusState)
                 )
                 .queue(
                         success -> LOGGER.info("Slash command registration succeeded"),

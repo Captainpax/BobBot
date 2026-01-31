@@ -1,14 +1,17 @@
 package com.bobbot.service;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.discord.BotStatus;
 import com.bobbot.osrs.HiscoreClient;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
+import com.bobbot.storage.PlayerRecord;
 import net.dv8tion.jda.api.JDA;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Service that builds a health report for the bot.
@@ -55,13 +58,16 @@ public class HealthService {
         Duration uptime = Duration.between(startedAt, Instant.now());
         BotSettings settings = storage.loadSettings();
         String leaderboardChannelId = settings.getLeaderboardChannelId();
+        String botStatus = BotStatus.normalize(settings.getBotStatus());
         int playerCount = storage.loadPlayers().size();
         long guildCount = jda.getGuilds().size();
         long ping = jda.getGatewayPing();
         OsrsStatus osrsStatus = fetchOsrsStatus();
+        String topXpUser = resolveTopXpUser();
 
         StringBuilder builder = new StringBuilder();
         builder.append("BobBot health:\n");
+        builder.append("- bot status: ").append(botStatus).append("\n");
         builder.append("- discord status: ").append(jda.getStatus().name().toLowerCase(Locale.ROOT)).append("\n");
         builder.append("- discord ping: ").append(ping).append("ms").append("\n");
         builder.append("- osrs status: ").append(osrsStatus.status).append("\n");
@@ -69,6 +75,7 @@ public class HealthService {
         builder.append("- uptime: ").append(formatDuration(uptime)).append("\n");
         builder.append("- guilds: ").append(guildCount).append("\n");
         builder.append("- linked players: ").append(playerCount).append("\n");
+        builder.append("- top xp user: ").append(topXpUser).append("\n");
         builder.append("- leaderboard channel: ")
                 .append(leaderboardChannelId == null || leaderboardChannelId.isBlank() ? "not set" : leaderboardChannelId)
                 .append("\n");
@@ -77,6 +84,38 @@ public class HealthService {
         builder.append("- poll interval: ").append(envConfig.pollInterval()).append("\n");
         builder.append("- gateway ping: ").append(ping).append("ms");
         return builder.toString();
+    }
+
+    /**
+     * Update and persist the bot presence status.
+     *
+     * @param jda active JDA client
+     * @param status input status
+     * @return normalized status string
+     */
+    public String updateBotStatus(JDA jda, String status) {
+        String normalized = BotStatus.normalize(status);
+        BotSettings settings = storage.loadSettings();
+        storage.saveSettings(settings.withBotStatus(normalized));
+        jda.getPresence().setStatus(BotStatus.toOnlineStatus(normalized));
+        return normalized;
+    }
+
+    private String resolveTopXpUser() {
+        Map<String, PlayerRecord> players = storage.loadPlayers();
+        if (players.isEmpty()) {
+            return "none";
+        }
+        PlayerRecord best = null;
+        for (PlayerRecord record : players.values()) {
+            if (best == null || record.getLastTotalLevel() > best.getLastTotalLevel()) {
+                best = record;
+            }
+        }
+        if (best == null) {
+            return "none";
+        }
+        return String.format("%s (total level %d)", best.getUsername(), best.getLastTotalLevel());
     }
 
     private OsrsStatus fetchOsrsStatus() {
