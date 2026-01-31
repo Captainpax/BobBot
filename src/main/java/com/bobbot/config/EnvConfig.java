@@ -17,13 +17,15 @@ import java.util.Optional;
  * @param leaderboardInterval interval between leaderboard posts
  * @param pollInterval interval between OSRS level checks
  * @param dataDirectory directory for JSON storage
+ * @param healthPort port for the health HTTP server
  */
 public record EnvConfig(
         String discordToken,
         String superuserId,
         Duration leaderboardInterval,
         Duration pollInterval,
-        Path dataDirectory
+        Path dataDirectory,
+        int healthPort
 ) {
     private static final Logger LOGGER = LoggerFactory.getLogger(EnvConfig.class);
 
@@ -42,14 +44,16 @@ public record EnvConfig(
         Duration leaderboardInterval = parseDuration(env, Duration.ofMinutes(60), "leaderboard-interval", "leaderboard_interval", "LEADERBOARD_INTERVAL");
         Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
-        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir);
+        int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT");
+        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort);
         LOGGER.info(
-                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}",
+                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}",
                 tokenEnv.key(),
                 !superuser.isBlank(),
                 leaderboardInterval,
                 pollInterval,
-                dataDir.toAbsolutePath()
+                dataDir.toAbsolutePath(),
+                healthPort
         );
         return config;
     }
@@ -105,6 +109,23 @@ public record EnvConfig(
             return Duration.parse(value);
         } catch (Exception e) {
             LOGGER.warn("Invalid duration for {} ({}). Using default {}", String.join("/", keys), value, defaultValue, e);
+            return defaultValue;
+        }
+    }
+
+    private static int parsePort(Map<String, String> env, int defaultValue, String... keys) {
+        String value = firstEnvValue(env, keys).orElse("");
+        if (value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            int port = Integer.parseInt(value.trim());
+            if (port <= 0 || port > 65535) {
+                throw new IllegalArgumentException("Port must be between 1 and 65535");
+            }
+            return port;
+        } catch (Exception e) {
+            LOGGER.warn("Invalid port for {} ({}). Using default {}", String.join("/", keys), value, defaultValue, e);
             return defaultValue;
         }
     }

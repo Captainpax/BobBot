@@ -4,6 +4,7 @@ import com.bobbot.config.EnvConfig;
 import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.discord.MentionHealthListener;
+import com.bobbot.health.HealthHttpServer;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +45,8 @@ public class BotApp {
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
+        HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
+        healthHttpServer.start(Optional.empty());
 
         LOGGER.info("Building JDA client");
         JDA jda = JDABuilder.createDefault(envConfig.discordToken(),
@@ -56,6 +60,7 @@ public class BotApp {
                 .build()
                 .awaitReady();
         LOGGER.info("JDA client ready");
+        healthHttpServer.setJda(Optional.of(jda));
 
         OptionData inviteTarget = new OptionData(OptionType.STRING, "target", "chat or discord", true)
                 .addChoice("chat", "chat")
@@ -108,6 +113,7 @@ public class BotApp {
             LOGGER.info("Shutting down scheduler and JDA");
             scheduler.shutdownNow();
             jda.shutdown();
+            healthHttpServer.stop();
         }));
     }
 
