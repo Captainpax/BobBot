@@ -78,7 +78,11 @@ public class BotApp {
                                         "channel_id",
                                         "Discord channel ID",
                                         true),
-                        Commands.slash("health", "Check bot health and stats")
+                        Commands.slash("health", "Check bot health and stats"),
+                        Commands.slash("power", "Restart or shutdown the bot")
+                                .addOption(OptionType.STRING, "action", "restart or shutdown", true)
+                                .addChoice("restart", "restart")
+                                .addChoice("shutdown", "shutdown")
                 )
                 .queue(
                         success -> LOGGER.info("Slash command registration succeeded"),

@@ -10,6 +10,8 @@ import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Locale;
@@ -18,6 +20,7 @@ import java.util.Locale;
  * JDA listener that handles all slash command interactions.
  */
 public class SlashCommandListener extends ListenerAdapter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SlashCommandListener.class);
     private final EnvConfig envConfig;
     private final LeaderboardService leaderboardService;
     private final LevelUpService levelUpService;
@@ -54,6 +57,7 @@ public class SlashCommandListener extends ListenerAdapter {
             case "postleaderboard" -> handlePostLeaderboard(event);
             case "setleaderboard" -> handleSetLeaderboard(event);
             case "health" -> handleHealth(event);
+            case "power" -> handlePower(event);
             default -> event.reply("Unknown command.").setEphemeral(true).queue();
         }
     }
@@ -147,6 +151,40 @@ public class SlashCommandListener extends ListenerAdapter {
     private void handleHealth(SlashCommandInteractionEvent event) {
         String report = healthService.buildHealthReport(event.getJDA());
         event.reply(report).queue();
+    }
+
+    /**
+     * Handle the /power command.
+     *
+     * @param event slash command event
+     */
+    private void handlePower(SlashCommandInteractionEvent event) {
+        if (!isSuperuser(event)) {
+            event.reply("Only the configured superuser can control power actions.")
+                    .setEphemeral(true)
+                    .queue();
+            return;
+        }
+        String action = event.getOption("action").getAsString().toLowerCase(Locale.ROOT);
+        if (!action.equals("restart") && !action.equals("shutdown")) {
+            event.reply("Action must be restart or shutdown.")
+                    .setEphemeral(true)
+                    .queue();
+            return;
+        }
+        int exitCode = action.equals("restart") ? 2 : 0;
+        String message = action.equals("restart")
+                ? "Restarting bot now."
+                : "Shutting down bot now.";
+        event.reply(message)
+                .setEphemeral(true)
+                .queue(success -> shutdown(event.getJDA(), action, exitCode));
+    }
+
+    private void shutdown(JDA jda, String action, int exitCode) {
+        LOGGER.info("Power action '{}' requested. Shutting down JDA with exit code {}", action, exitCode);
+        jda.shutdown();
+        System.exit(exitCode);
     }
 
     /**
