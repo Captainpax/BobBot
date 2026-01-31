@@ -43,7 +43,7 @@ public record EnvConfig(
         Duration leaderboardInterval = parseDuration(env, Duration.ofMinutes(60), "leaderboard-interval", "leaderboard_interval", "LEADERBOARD_INTERVAL");
         Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
-        int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT");
+        int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT", "PORT");
         EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort);
         if (!config.hasDiscordToken()) {
             LOGGER.error("Discord token missing. Set discord-token, discord_token, or DISCORD_TOKEN to start the bot.");
