@@ -2,7 +2,7 @@ package com.bobbot.discord;
 
 import com.bobbot.config.EnvConfig;
 import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.events.ReadyEvent;
+import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
