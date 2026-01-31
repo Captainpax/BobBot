@@ -26,15 +26,28 @@ public class MentionHealthListener extends ListenerAdapter {
         if (event.getAuthor().isBot() || event.getAuthor().isSystem()) {
             return;
         }
-        if (!event.getMessage().getMentions().isMentioned(event.getJDA().getSelfUser())) {
+        if (event.isFromGuild() && !event.getMessage().getMentions().isMentioned(event.getJDA().getSelfUser())) {
             return;
         }
-        String content = event.getMessage().getContentRaw().toLowerCase(Locale.ROOT);
-        if (!content.contains("you online")) {
+        String content = normalizedContent(event).toLowerCase(Locale.ROOT);
+        if (!content.contains("you online") && !content.contains("online") && !content.contains("health")) {
             return;
         }
         boolean online = healthService.isOnline(event.getJDA());
         String reply = (online ? "yes" : "not quite") + "\n" + healthService.buildHealthReport(event.getJDA());
         event.getChannel().sendMessage(reply).queue();
+    }
+
+    private String normalizedContent(MessageReceivedEvent event) {
+        String content = event.getMessage().getContentRaw();
+        if (content != null && !content.isBlank()) {
+            return content;
+        }
+        content = event.getMessage().getContentDisplay();
+        if (content != null && !content.isBlank()) {
+            return content;
+        }
+        content = event.getMessage().getContentStripped();
+        return content == null ? "" : content;
     }
 }

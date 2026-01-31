@@ -149,8 +149,9 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param event slash command event
      */
     private void handleHealth(SlashCommandInteractionEvent event) {
+        event.deferReply().queue();
         String report = healthService.buildHealthReport(event.getJDA());
-        event.reply(report).queue();
+        event.getHook().sendMessage(report).queue();
     }
 
     /**
