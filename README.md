@@ -6,6 +6,7 @@ A lightweight Discord bot built with **Java 21** and **JDA 6.3.0** that posts wh
 - Polls OSRS hiscores for linked players.
 - Posts a message when a player gains total levels.
 - Publishes a leaderboard on demand and on an interval.
+- Exposes a lightweight `/health` HTTP endpoint for uptime checks.
 - Uses slash commands only.
 
 ## Project layout
@@ -38,6 +39,8 @@ docker run --rm \
   -e LEADERBOARD_INTERVAL=60m \
   -e POLL_INTERVAL=300 \
   -e DATA_DIR=/data \
+  -e HEALTH_PORT=8080 \
+  -p 8080:8080 \
   -v $(pwd)/data:/data \
   bobbot
 ```
@@ -58,6 +61,8 @@ Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurati
   - How often to check OSRS hiscores. Accepts seconds (`300`) or `s/m/h` suffix (`5m`). Default: `5m`.
 - `DATA_DIR`
   - Directory for JSON storage. Default: `data`.
+- `HEALTH_PORT`
+  - Port for the `/health` HTTP endpoint. Default: `8080`.
 
 ### Template
 See `template.env` for a copy/paste starter file that lists all variables with examples.
@@ -69,6 +74,9 @@ See `template.env` for a copy/paste starter file that lists all variables with e
 - `/link <player_username>`
 - `/postleaderboard`
 - `/setleaderboard <channel_id>`
+
+## Health endpoint
+- `GET /health` returns a plain-text status report with Discord connectivity, OSRS probe, and scheduling details.
 
 ## Data files
 - `data/players.json` — map of Discord user IDs to linked OSRS usernames and last total level
