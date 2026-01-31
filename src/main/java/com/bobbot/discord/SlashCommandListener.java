@@ -187,37 +187,39 @@ public class SlashCommandListener extends ListenerAdapter {
             List<SkillStat> stats = levelUpService.fetchSkillStats(record.getUsername());
             StringBuilder builder = new StringBuilder();
             builder.append("Stats for ").append(record.getUsername()).append(":\n");
-            builder.append("- total level: ").append(record.getLastTotalLevel()).append("\n");
             Instant lastLeaderboardTimestamp = leaderboardService.getLastLeaderboardTimestamp();
             Integer lastLeaderboardTotal = record.getLastLeaderboardTotalLevel();
+            List<String> messages = new ArrayList<>();
+            StringBuilder current = new StringBuilder(builder);
+            List<String> totalsRows = new ArrayList<>();
+            totalsRows.add(String.format("| ⭐ Total Level | %d |", record.getLastTotalLevel()));
             if (lastLeaderboardTimestamp != null && lastLeaderboardTotal != null) {
                 int gained = record.getLastTotalLevel() - lastLeaderboardTotal;
                 String timestamp = "<t:" + lastLeaderboardTimestamp.getEpochSecond() + ":F>";
-                builder.append("- levels gained since ").append(timestamp).append(": ").append(gained).append("\n");
+                totalsRows.add(String.format("| ⬆️ Levels Gained (since %s) | %+d |", timestamp, gained));
             } else {
-                builder.append("- levels gained since last leaderboard: no snapshot yet.\n");
+                totalsRows.add("| ⬆️ Levels Gained (since last leaderboard) | — |");
             }
-            List<String> messages = new ArrayList<>();
-            StringBuilder current = new StringBuilder(builder);
+            current = appendTableSection(messages,
+                    current,
+                    "📊 **Totals**",
+                    "| 📊 Stat | ⭐ Value |",
+                    "|:--|--:|",
+                    totalsRows);
             if (!stats.isEmpty()) {
-                String skillsHeader = "Skills:\n";
-                if (current.length() + skillsHeader.length() > DISCORD_MESSAGE_LIMIT) {
-                    messages.add(current.toString());
-                    current = new StringBuilder(skillsHeader);
-                } else {
-                    current.append(skillsHeader);
-                }
+                List<String> skillRows = new ArrayList<>();
                 for (SkillStat stat : stats) {
                     if (stat.skill().isOverall()) {
                         continue;
                     }
-                    String line = formatSkillLine(stat);
-                    if (current.length() + line.length() + 1 > DISCORD_MESSAGE_LIMIT) {
-                        messages.add(current.toString());
-                        current = new StringBuilder("Skills (cont.):\n");
-                    }
-                    current.append(line).append("\n");
+                    skillRows.add(formatSkillRow(stat));
                 }
+                current = appendTableSection(messages,
+                        current,
+                        "📊 **Skills**",
+                        "| ⭐ Skill | ⬆️ Level | 📈 XP to Next |",
+                        "|:--|--:|--:|",
+                        skillRows);
             }
             messages.add(current.toString());
             for (String message : messages) {
@@ -327,14 +329,41 @@ public class SlashCommandListener extends ListenerAdapter {
                 event.getName(), event.getUser().getId(), guildId);
     }
 
-    private String formatSkillLine(SkillStat stat) {
+    private String formatSkillRow(SkillStat stat) {
         if (stat.level() < 1) {
-            return String.format("%s: unranked", stat.skill().displayName());
+            return String.format("| %s | unranked | — |", stat.skill().displayName());
         }
         long xpToNext = OsrsXpTable.xpToNextLevel(stat.level(), stat.xp());
-        return String.format(Locale.US, "%s: %d (xp to next: %,d)",
+        return String.format(Locale.US, "| %s | %d | %,d |",
                 stat.skill().displayName(),
                 stat.level(),
                 xpToNext);
+    }
+
+    private StringBuilder appendTableSection(List<String> messages,
+                                             StringBuilder current,
+                                             String title,
+                                             String header,
+                                             String separator,
+                                             List<String> rows) {
+        String tableHeader = title + "\n" + header + "\n" + separator + "\n";
+        if (current.length() + tableHeader.length() > DISCORD_MESSAGE_LIMIT) {
+            if (current.length() > 0) {
+                messages.add(current.toString());
+            }
+            current = new StringBuilder();
+        }
+        current.append(tableHeader);
+        for (String row : rows) {
+            String rowLine = row + "\n";
+            if (current.length() + rowLine.length() > DISCORD_MESSAGE_LIMIT) {
+                messages.add(current.toString());
+                current = new StringBuilder();
+                current.append(title).append(" (cont.)\n");
+                current.append(header).append("\n").append(separator).append("\n");
+            }
+            current.append(rowLine);
+        }
+        return current;
     }
 }
