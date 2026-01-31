@@ -2,7 +2,7 @@
 FROM gradle:8.14.3-jdk21 AS build
 WORKDIR /app
 COPY . .
-RUN ./gradlew --no-daemon clean installDist
+RUN gradle --no-daemon clean installDist
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
