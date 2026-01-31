@@ -23,8 +23,8 @@ gradle clean build
 
 ## Run locally
 ```bash
-export discord-token=YOUR_TOKEN
-export discord-superuser-id=YOUR_USER_ID
+export DISCORD_TOKEN=YOUR_TOKEN
+export DISCORD_SUPERUSER_ID=YOUR_USER_ID
 gradle run
 ```
 
@@ -33,30 +33,30 @@ gradle run
 docker build -t bobbot .
 
 docker run --rm \
-  -e discord-token=YOUR_TOKEN \
-  -e discord-superuser-id=YOUR_USER_ID \
-  -e leaderboard-interval=60m \
-  -e poll-interval=300 \
-  -e data-dir=/data \
+  -e DISCORD_TOKEN=YOUR_TOKEN \
+  -e DISCORD_SUPERUSER_ID=YOUR_USER_ID \
+  -e LEADERBOARD_INTERVAL=60m \
+  -e POLL_INTERVAL=300 \
+  -e DATA_DIR=/data \
   -v $(pwd)/data:/data \
   bobbot
 ```
 
 ## Environment variables
-The bot accepts both dashed and uppercase names so Docker `-e` usage is easy.
+Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurations, and `.env` files. Dashed names are only supported for Docker `-e` usage.
 
 ### Mandatory
-- `discord-token` / `DISCORD_TOKEN`
-  - Discord bot token.
+- `DISCORD_TOKEN`
+  - Discord bot token. (Docker `-e` only: `discord-token`)
 
 ### Optional
-- `discord-superuser-id` / `DISCORD_SUPERUSER_ID`
-  - Discord user ID allowed to run privileged commands.
-- `leaderboard-interval` / `LEADERBOARD_INTERVAL`
+- `DISCORD_SUPERUSER_ID`
+  - Discord user ID allowed to run privileged commands. (Docker `-e` only: `discord-superuser-id`)
+- `LEADERBOARD_INTERVAL`
   - How often to post the leaderboard. Accepts seconds (`300`) or `s/m/h` suffix (`60m`). Default: `60m`.
-- `poll-interval` / `POLL_INTERVAL`
+- `POLL_INTERVAL`
   - How often to check OSRS hiscores. Accepts seconds (`300`) or `s/m/h` suffix (`5m`). Default: `5m`.
-- `data-dir` / `DATA_DIR`
+- `DATA_DIR`
   - Directory for JSON storage. Default: `data`.
 
 ### Template
