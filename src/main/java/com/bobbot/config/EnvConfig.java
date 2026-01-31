@@ -1,5 +1,8 @@
 package com.bobbot.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
@@ -22,6 +25,8 @@ public record EnvConfig(
         Duration pollInterval,
         Path dataDirectory
 ) {
+    private static final Logger LOGGER = LoggerFactory.getLogger(EnvConfig.class);
+
     /**
      * Load configuration from environment variables.
      *
@@ -29,43 +34,57 @@ public record EnvConfig(
      */
     public static EnvConfig load() {
         Map<String, String> env = System.getenv();
-        String token = firstEnv(env, "discord-token", "DISCORD_TOKEN")
-                .orElseThrow(() -> new IllegalStateException("discord-token (or DISCORD_TOKEN) env var is required"));
-        String superuser = firstEnv(env, "discord-superuser-id", "DISCORD_SUPERUSER_ID")
+        ResolvedEnv tokenEnv = firstEnv(env, "discord-token", "discord_token", "DISCORD_TOKEN")
+                .orElseThrow(() -> new IllegalStateException("discord-token, discord_token, or DISCORD_TOKEN env var is required"));
+        String token = tokenEnv.value();
+        String superuser = firstEnv(env, "discord-superuser-id", "discord_superuser_id", "DISCORD_SUPERUSER_ID")
                 .orElse("");
-        Duration leaderboardInterval = parseDuration(env, "leaderboard-interval", "LEADERBOARD_INTERVAL", Duration.ofMinutes(60));
-        Duration pollInterval = parseDuration(env, "poll-interval", "POLL_INTERVAL", Duration.ofMinutes(5));
-        Path dataDir = Path.of(firstEnv(env, "data-dir", "DATA_DIR").orElse("data"));
-        return new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir);
+        Duration leaderboardInterval = parseDuration(env, Duration.ofMinutes(60), "leaderboard-interval", "leaderboard_interval", "LEADERBOARD_INTERVAL");
+        Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
+        Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
+        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir);
+        LOGGER.info(
+                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}",
+                tokenEnv.key(),
+                !superuser.isBlank(),
+                leaderboardInterval,
+                pollInterval,
+                dataDir.toAbsolutePath()
+        );
+        return config;
     }
 
     /**
      * Resolve the first non-blank environment variable from a primary or fallback key.
      *
      * @param env environment map
-     * @param primary primary key (dashed)
-     * @param fallback fallback key (uppercase)
+     * @param keys possible keys in order of preference
      * @return optional value
      */
-    private static Optional<String> firstEnv(Map<String, String> env, String primary, String fallback) {
-        String value = env.get(primary);
-        if (value == null || value.isBlank()) {
-            value = env.get(fallback);
+    private static Optional<ResolvedEnv> firstEnv(Map<String, String> env, String... keys) {
+        for (String key : keys) {
+            String value = env.get(key);
+            if (value != null && !value.isBlank()) {
+                return Optional.of(new ResolvedEnv(key, value));
+            }
         }
-        return Optional.ofNullable(value).filter(v -> !v.isBlank());
+        return Optional.empty();
+    }
+
+    private static Optional<String> firstEnvValue(Map<String, String> env, String... keys) {
+        return firstEnv(env, keys).map(ResolvedEnv::value);
     }
 
     /**
      * Parse a duration from env variables, supporting seconds or s/m/h suffixes.
      *
      * @param env environment map
-     * @param primary primary key
-     * @param fallback fallback key
+     * @param keys env keys to try
      * @param defaultValue default duration when absent or invalid
      * @return parsed duration
      */
-    private static Duration parseDuration(Map<String, String> env, String primary, String fallback, Duration defaultValue) {
-        String value = firstEnv(env, primary, fallback).orElse("");
+    private static Duration parseDuration(Map<String, String> env, Duration defaultValue, String... keys) {
+        String value = firstEnvValue(env, keys).orElse("");
         if (value.isBlank()) {
             return defaultValue;
         }
@@ -85,7 +104,11 @@ public record EnvConfig(
             }
             return Duration.parse(value);
         } catch (Exception e) {
+            LOGGER.warn("Invalid duration for {} ({}). Using default {}", String.join("/", keys), value, defaultValue, e);
             return defaultValue;
         }
+    }
+
+    private record ResolvedEnv(String key, String value) {
     }
 }
