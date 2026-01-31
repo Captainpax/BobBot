@@ -191,20 +191,20 @@ public class SlashCommandListener extends ListenerAdapter {
         if (action == null) {
             return;
         }
-        action = action.toLowerCase(Locale.ROOT);
-        if (!action.equals("restart") && !action.equals("shutdown")) {
+        String normalizedAction = action.toLowerCase(Locale.ROOT);
+        if (!normalizedAction.equals("restart") && !normalizedAction.equals("shutdown")) {
             event.reply("Action must be restart or shutdown.")
                     .setEphemeral(true)
                     .queue();
             return;
         }
-        int exitCode = action.equals("restart") ? 2 : 0;
-        String message = action.equals("restart")
+        int exitCode = normalizedAction.equals("restart") ? 2 : 0;
+        String message = normalizedAction.equals("restart")
                 ? "Restarting bot now."
                 : "Shutting down bot now.";
         event.reply(message)
                 .setEphemeral(true)
-                .queue(success -> shutdown(event.getJDA(), action, exitCode));
+                .queue(success -> shutdown(event.getJDA(), normalizedAction, exitCode));
     }
 
     /**
