@@ -73,10 +73,8 @@ public class LeaderboardService {
         for (PlayerEntry entry : skillEntries) {
             builder.append(rank++)
                     .append(". ")
-                    .append(formatMention(entry.discordUserId()))
-                    .append(" (")
-                    .append(entry.record().getUsername())
-                    .append(") — lvl ")
+                    .append(formatLeaderboardName(entry.discordUserId(), entry.record().getUsername()))
+                    .append(" — lvl ")
                     .append(entry.skillLevel())
                     .append("\n");
         }
@@ -93,10 +91,8 @@ public class LeaderboardService {
             int weeklyDelta = totalLevel - weeklySnapshot;
             builder.append(rank++)
                     .append(". ")
-                    .append(formatMention(entry.discordUserId()))
-                    .append(" (")
-                    .append(record.getUsername())
-                    .append(") — ")
+                    .append(formatLeaderboardName(entry.discordUserId(), record.getUsername()))
+                    .append(" — ")
                     .append(totalLevel)
                     .append(" | ")
                     .append(formatDelta(delta))
@@ -223,11 +219,21 @@ public class LeaderboardService {
         return entries;
     }
 
-    private String formatMention(String discordUserId) {
-        if (discordUserId == null || discordUserId.isBlank()) {
-            return "@unknown";
+    private String formatLeaderboardName(String discordUserId, String username) {
+        if (isValidDiscordId(discordUserId)) {
+            if (username != null && !username.isBlank()) {
+                return "<@" + discordUserId + "> (" + username + ")";
+            }
+            return "<@" + discordUserId + ">";
         }
-        return "<@" + discordUserId + ">";
+        if (username != null && !username.isBlank()) {
+            return username;
+        }
+        return "@unknown";
+    }
+
+    private boolean isValidDiscordId(String discordUserId) {
+        return discordUserId != null && discordUserId.matches("\\d{17,20}");
     }
 
     private String formatDelta(int delta) {
