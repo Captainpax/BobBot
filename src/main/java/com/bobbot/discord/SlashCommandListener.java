@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Locale;
 
 /**
@@ -58,6 +59,7 @@ public class SlashCommandListener extends ListenerAdapter {
                 case "link" -> handleLink(event);
                 case "postleaderboard" -> handlePostLeaderboard(event);
                 case "setleaderboard" -> handleSetLeaderboard(event);
+                case "mystats" -> handleMyStats(event);
                 case "health" -> handleHealth(event);
                 case "power" -> handlePower(event);
                 case "status" -> handleStatus(event);
@@ -162,6 +164,38 @@ public class SlashCommandListener extends ListenerAdapter {
         }
         leaderboardService.setLeaderboardChannel(channelId);
         event.reply("Leaderboard channel set.").setEphemeral(true).queue();
+    }
+
+    /**
+     * Handle the /mystats command.
+     *
+     * @param event slash command event
+     */
+    private void handleMyStats(SlashCommandInteractionEvent event) {
+        event.deferReply(true).queue();
+        try {
+            PlayerRecord record = levelUpService.refreshPlayer(event.getUser().getId());
+            if (record == null) {
+                event.getHook().sendMessage("You haven't linked a player yet. Use /link to get started.").queue();
+                return;
+            }
+            StringBuilder builder = new StringBuilder();
+            builder.append("Stats for ").append(record.getUsername()).append(":\n");
+            builder.append("- total level: ").append(record.getLastTotalLevel()).append("\n");
+            Instant lastLeaderboardTimestamp = leaderboardService.getLastLeaderboardTimestamp();
+            Integer lastLeaderboardTotal = record.getLastLeaderboardTotalLevel();
+            if (lastLeaderboardTimestamp != null && lastLeaderboardTotal != null) {
+                int gained = record.getLastTotalLevel() - lastLeaderboardTotal;
+                String timestamp = "<t:" + lastLeaderboardTimestamp.getEpochSecond() + ":F>";
+                builder.append("- levels gained since ").append(timestamp).append(": ").append(gained).append("\n");
+            } else {
+                builder.append("- levels gained since last leaderboard: no snapshot yet.\n");
+            }
+            event.getHook().sendMessage(builder.toString()).queue();
+        } catch (IOException | InterruptedException e) {
+            LOGGER.error("Failed to fetch stats for user {}", event.getUser().getId(), e);
+            event.getHook().sendMessage("Failed to fetch your latest stats. Try again in a bit.").queue();
+        }
     }
 
     /**

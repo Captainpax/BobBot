@@ -122,6 +122,9 @@ public class BotApp {
                                         "channel_id",
                                         "Discord channel ID",
                                         true),
+                        Commands.slash("mystats", "Show your current level and gains since the last leaderboard")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes),
                         Commands.slash("health", "Check bot health and stats")
                                 .setContexts(dmAndGuild)
                                 .setIntegrationTypes(installTypes),

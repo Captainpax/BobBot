@@ -12,6 +12,7 @@ public class PlayerRecord {
     private final String username;
     private final int lastTotalLevel;
     private final Instant lastCheckedAt;
+    private final Integer lastLeaderboardTotalLevel;
 
     /**
      * Create a player record.
@@ -19,16 +20,19 @@ public class PlayerRecord {
      * @param username OSRS username
      * @param lastTotalLevel last known total level
      * @param lastCheckedAt last time refreshed
+     * @param lastLeaderboardTotalLevel last total level at leaderboard time
      */
     @JsonCreator
     public PlayerRecord(
             @JsonProperty("username") String username,
             @JsonProperty("lastTotalLevel") int lastTotalLevel,
-            @JsonProperty("lastCheckedAt") Instant lastCheckedAt
+            @JsonProperty("lastCheckedAt") Instant lastCheckedAt,
+            @JsonProperty("lastLeaderboardTotalLevel") Integer lastLeaderboardTotalLevel
     ) {
         this.username = username;
         this.lastTotalLevel = lastTotalLevel;
         this.lastCheckedAt = lastCheckedAt;
+        this.lastLeaderboardTotalLevel = lastLeaderboardTotalLevel;
     }
 
     /**
@@ -53,13 +57,20 @@ public class PlayerRecord {
     }
 
     /**
+     * @return total level at the last leaderboard snapshot
+     */
+    public Integer getLastLeaderboardTotalLevel() {
+        return lastLeaderboardTotalLevel;
+    }
+
+    /**
      * Create a copy with a new total level and refreshed timestamp.
      *
      * @param totalLevel updated total level
      * @return new player record
      */
     public PlayerRecord withLevel(int totalLevel) {
-        return new PlayerRecord(username, totalLevel, Instant.now());
+        return new PlayerRecord(username, totalLevel, Instant.now(), lastLeaderboardTotalLevel);
     }
 
     /**
@@ -70,6 +81,16 @@ public class PlayerRecord {
      * @return new player record
      */
     public PlayerRecord withUsername(String newUsername, int totalLevel) {
-        return new PlayerRecord(newUsername, totalLevel, Instant.now());
+        return new PlayerRecord(newUsername, totalLevel, Instant.now(), null);
+    }
+
+    /**
+     * Create a copy with a new leaderboard snapshot level.
+     *
+     * @param totalLevel leaderboard total level
+     * @return new player record
+     */
+    public PlayerRecord withLeaderboardSnapshot(int totalLevel) {
+        return new PlayerRecord(username, lastTotalLevel, lastCheckedAt, totalLevel);
     }
 }
