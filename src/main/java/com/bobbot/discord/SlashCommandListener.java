@@ -205,7 +205,8 @@ public class SlashCommandListener extends ListenerAdapter {
                     "📊 **Totals**",
                     "| 📊 Stat | ⭐ Value |",
                     "|:--|--:|",
-                    totalsRows);
+                    totalsRows,
+                    false);
             if (!stats.isEmpty()) {
                 List<String> skillRows = new ArrayList<>();
                 for (SkillStat stat : stats) {
@@ -219,7 +220,8 @@ public class SlashCommandListener extends ListenerAdapter {
                         "📊 **Skills**",
                         "| ⭐ Skill | ⬆️ Level | 📈 XP to Next |",
                         "|:--|--:|--:|",
-                        skillRows);
+                        skillRows,
+                        true);
             }
             messages.add(current.toString());
             for (String message : messages) {
@@ -345,9 +347,12 @@ public class SlashCommandListener extends ListenerAdapter {
                                              String title,
                                              String header,
                                              String separator,
-                                             List<String> rows) {
-        String tableHeader = title + "\n" + header + "\n" + separator + "\n";
-        if (current.length() + tableHeader.length() > DISCORD_MESSAGE_LIMIT) {
+                                             List<String> rows,
+                                             boolean codeBlock) {
+        String blockStart = codeBlock ? "```\n" : "";
+        String blockEnd = codeBlock ? "```" : "";
+        String tableHeader = title + "\n" + blockStart + header + "\n" + separator + "\n";
+        if (current.length() + tableHeader.length() + blockEnd.length() > DISCORD_MESSAGE_LIMIT) {
             if (current.length() > 0) {
                 messages.add(current.toString());
             }
@@ -356,13 +361,19 @@ public class SlashCommandListener extends ListenerAdapter {
         current.append(tableHeader);
         for (String row : rows) {
             String rowLine = row + "\n";
-            if (current.length() + rowLine.length() > DISCORD_MESSAGE_LIMIT) {
+            if (current.length() + rowLine.length() + blockEnd.length() > DISCORD_MESSAGE_LIMIT) {
+                if (codeBlock) {
+                    current.append(blockEnd);
+                }
                 messages.add(current.toString());
                 current = new StringBuilder();
                 current.append(title).append(" (cont.)\n");
-                current.append(header).append("\n").append(separator).append("\n");
+                current.append(blockStart).append(header).append("\n").append(separator).append("\n");
             }
             current.append(rowLine);
+        }
+        if (codeBlock) {
+            current.append(blockEnd);
         }
         return current;
     }
