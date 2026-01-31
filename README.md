@@ -61,7 +61,7 @@ Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurati
   - How often to check OSRS hiscores. Accepts seconds (`300`) or `s/m/h` suffix (`5m`). Default: `5m`.
 - `DATA_DIR`
   - Directory for JSON storage. Default: `data`.
-- `HEALTH_PORT`
+- `HEALTH_PORT` or `PORT`
   - Port for the `/health` HTTP endpoint. Default: `8080`.
 
 ### Template

@@ -11,7 +11,9 @@ import com.bobbot.service.LevelUpService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.OnlineStatus;
 import net.dv8tion.jda.api.entities.Activity;
+import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
@@ -58,6 +60,7 @@ public class BotApp {
         try {
             jda = JDABuilder.createDefault(envConfig.discordToken(),
                             EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
+                    .setStatus(OnlineStatus.ONLINE)
                     .setActivity(Activity.playing("OSRS levels"))
                     .addEventListeners(
                             new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
@@ -82,9 +85,14 @@ public class BotApp {
                 .addChoice("shutdown", "shutdown");
 
         LOGGER.info("Queueing slash command registration");
+        EnumSet<InteractionContextType> dmAndGuild = EnumSet.of(
+                InteractionContextType.GUILD,
+                InteractionContextType.BOT_DM
+        );
         jda.updateCommands()
                 .addCommands(
                         Commands.slash("invitebot", "Get an invite link or info for chat installs")
+                                .setContexts(dmAndGuild)
                                 .addOptions(inviteTarget, inviteTargetId),
                         Commands.slash("link", "Link an Old School RuneScape username")
                                 .addOption(OptionType.STRING,
@@ -97,7 +105,8 @@ public class BotApp {
                                         "channel_id",
                                         "Discord channel ID",
                                         true),
-                        Commands.slash("health", "Check bot health and stats"),
+                        Commands.slash("health", "Check bot health and stats")
+                                .setContexts(dmAndGuild),
                         Commands.slash("power", "Restart or shutdown the bot")
                                 .addOptions(powerAction)
                 )
