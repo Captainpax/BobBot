@@ -36,9 +36,8 @@ public record EnvConfig(
      */
     public static EnvConfig load() {
         Map<String, String> env = System.getenv();
-        ResolvedEnv tokenEnv = firstEnv(env, "discord-token", "discord_token", "DISCORD_TOKEN")
-                .orElseThrow(() -> new IllegalStateException("discord-token, discord_token, or DISCORD_TOKEN env var is required"));
-        String token = tokenEnv.value();
+        Optional<ResolvedEnv> tokenEnv = firstEnv(env, "discord-token", "discord_token", "DISCORD_TOKEN");
+        String token = tokenEnv.map(ResolvedEnv::value).orElse("");
         String superuser = firstEnvValue(env, "discord-superuser-id", "discord_superuser_id", "DISCORD_SUPERUSER_ID")
                 .orElse("");
         Duration leaderboardInterval = parseDuration(env, Duration.ofMinutes(60), "leaderboard-interval", "leaderboard_interval", "LEADERBOARD_INTERVAL");
@@ -46,9 +45,12 @@ public record EnvConfig(
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
         int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT");
         EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort);
+        if (!config.hasDiscordToken()) {
+            LOGGER.error("Discord token missing. Set discord-token, discord_token, or DISCORD_TOKEN to start the bot.");
+        }
         LOGGER.info(
                 "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}",
-                tokenEnv.key(),
+                tokenEnv.map(ResolvedEnv::key).orElse("missing"),
                 !superuser.isBlank(),
                 leaderboardInterval,
                 pollInterval,
@@ -56,6 +58,10 @@ public record EnvConfig(
                 healthPort
         );
         return config;
+    }
+
+    public boolean hasDiscordToken() {
+        return discordToken != null && !discordToken.isBlank();
     }
 
     /**
