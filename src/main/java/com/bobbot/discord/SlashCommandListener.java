@@ -51,15 +51,24 @@ public class SlashCommandListener extends ListenerAdapter {
      */
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        switch (event.getName()) {
-            case "invitebot" -> handleInvite(event);
-            case "link" -> handleLink(event);
-            case "postleaderboard" -> handlePostLeaderboard(event);
-            case "setleaderboard" -> handleSetLeaderboard(event);
-            case "health" -> handleHealth(event);
-            case "power" -> handlePower(event);
-            case "status" -> handleStatus(event);
-            default -> event.reply("Unknown command.").setEphemeral(true).queue();
+        logCommand(event);
+        try {
+            switch (event.getName()) {
+                case "invitebot" -> handleInvite(event);
+                case "link" -> handleLink(event);
+                case "postleaderboard" -> handlePostLeaderboard(event);
+                case "setleaderboard" -> handleSetLeaderboard(event);
+                case "health" -> handleHealth(event);
+                case "power" -> handlePower(event);
+                case "status" -> handleStatus(event);
+                default -> {
+                    LOGGER.debug("Unknown slash command name '{}'", event.getName());
+                    event.reply("Unknown command.").setEphemeral(true).queue();
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Slash command '{}' failed for user {}", event.getName(), event.getUser().getId(), e);
+            event.reply("Command failed unexpectedly. Please try again.").setEphemeral(true).queue();
         }
     }
 
@@ -69,8 +78,12 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param event slash command event
      */
     private void handleInvite(SlashCommandInteractionEvent event) {
-        String target = event.getOption("target").getAsString().toLowerCase(Locale.ROOT);
-        String targetId = event.getOption("target_id").getAsString();
+        String target = getRequiredOption(event, "target");
+        String targetId = getRequiredOption(event, "target_id");
+        if (target == null || targetId == null) {
+            return;
+        }
+        target = target.toLowerCase(Locale.ROOT);
         if (!isSuperuser(event)) {
             event.reply("Only the configured superuser can request invites.").setEphemeral(true).queue();
             return;
@@ -98,13 +111,17 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param event slash command event
      */
     private void handleLink(SlashCommandInteractionEvent event) {
-        String username = event.getOption("player_username").getAsString();
+        String username = getRequiredOption(event, "player_username");
+        if (username == null) {
+            return;
+        }
         event.deferReply(true).queue();
         try {
             PlayerRecord record = levelUpService.linkPlayer(event.getUser().getId(), username);
             event.getHook().sendMessage(String.format("Linked %s at total level %d.",
                     record.getUsername(), record.getLastTotalLevel())).queue();
         } catch (IOException | InterruptedException e) {
+            LOGGER.error("Failed to link player '{}' for user {}", username, event.getUser().getId(), e);
             event.getHook().sendMessage("Failed to fetch hiscore data. Check the username and try again.").queue();
         }
     }
@@ -134,7 +151,10 @@ public class SlashCommandListener extends ListenerAdapter {
             event.reply("Only the configured superuser can set the leaderboard channel.").setEphemeral(true).queue();
             return;
         }
-        String channelId = event.getOption("channel_id").getAsString();
+        String channelId = getRequiredOption(event, "channel_id");
+        if (channelId == null) {
+            return;
+        }
         MessageChannel channel = levelUpService.resolveChannel(event.getJDA(), channelId);
         if (channel == null) {
             event.reply("Unable to find a channel with that ID.").setEphemeral(true).queue();
@@ -167,7 +187,11 @@ public class SlashCommandListener extends ListenerAdapter {
                     .queue();
             return;
         }
-        String action = event.getOption("action").getAsString().toLowerCase(Locale.ROOT);
+        String action = getRequiredOption(event, "action");
+        if (action == null) {
+            return;
+        }
+        action = action.toLowerCase(Locale.ROOT);
         if (!action.equals("restart") && !action.equals("shutdown")) {
             event.reply("Action must be restart or shutdown.")
                     .setEphemeral(true)
@@ -195,7 +219,10 @@ public class SlashCommandListener extends ListenerAdapter {
                     .queue();
             return;
         }
-        String status = event.getOption("state").getAsString();
+        String status = getRequiredOption(event, "state");
+        if (status == null) {
+            return;
+        }
         String normalized = healthService.updateBotStatus(event.getJDA(), status);
         event.reply("Bot status set to " + normalized + ".")
                 .setEphemeral(true)
@@ -217,5 +244,21 @@ public class SlashCommandListener extends ListenerAdapter {
     private boolean isSuperuser(SlashCommandInteractionEvent event) {
         String superuser = envConfig.superuserId();
         return superuser != null && !superuser.isBlank() && superuser.equals(event.getUser().getId());
+    }
+
+    private String getRequiredOption(SlashCommandInteractionEvent event, String name) {
+        if (event.getOption(name) == null) {
+            LOGGER.warn("Slash command '{}' missing required option '{}' for user {}",
+                    event.getName(), name, event.getUser().getId());
+            event.reply("Missing required option: " + name + ".").setEphemeral(true).queue();
+            return null;
+        }
+        return event.getOption(name).getAsString();
+    }
+
+    private void logCommand(SlashCommandInteractionEvent event) {
+        String guildId = event.getGuild() != null ? event.getGuild().getId() : "DM";
+        LOGGER.debug("Slash command '{}' received from user {} in {}",
+                event.getName(), event.getUser().getId(), guildId);
     }
 }

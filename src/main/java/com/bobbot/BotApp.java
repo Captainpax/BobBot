@@ -13,6 +13,7 @@ import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
+import net.dv8tion.jda.api.interactions.IntegrationType;
 import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
@@ -94,27 +95,43 @@ public class BotApp {
                 InteractionContextType.GUILD,
                 InteractionContextType.BOT_DM
         );
+        EnumSet<IntegrationType> installTypes = EnumSet.of(
+                IntegrationType.GUILD_INSTALL,
+                IntegrationType.USER_INSTALL
+        );
         jda.updateCommands()
                 .addCommands(
                         Commands.slash("invitebot", "Get an invite link or info for chat installs")
                                 .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes)
                                 .addOptions(inviteTarget, inviteTargetId),
                         Commands.slash("link", "Link an Old School RuneScape username")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes)
                                 .addOption(OptionType.STRING,
                                         "player_username",
                                         "Your OSRS username",
                                         true),
-                        Commands.slash("postleaderboard", "Post the current OSRS leaderboard"),
+                        Commands.slash("postleaderboard", "Post the current OSRS leaderboard")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes),
                         Commands.slash("setleaderboard", "Set the channel for leaderboard posts")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes)
                                 .addOption(OptionType.STRING,
                                         "channel_id",
                                         "Discord channel ID",
                                         true),
                         Commands.slash("health", "Check bot health and stats")
-                                .setContexts(dmAndGuild),
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes),
                         Commands.slash("power", "Restart or shutdown the bot")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes)
                                 .addOptions(powerAction),
                         Commands.slash("status", "Update the bot presence status")
+                                .setContexts(dmAndGuild)
+                                .setIntegrationTypes(installTypes)
                                 .addOptions(statusState)
                 )
                 .queue(
