@@ -1,6 +1,7 @@
 package com.bobbot.discord;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
 import com.bobbot.storage.PlayerRecord;
@@ -20,6 +21,7 @@ public class SlashCommandListener extends ListenerAdapter {
     private final EnvConfig envConfig;
     private final LeaderboardService leaderboardService;
     private final LevelUpService levelUpService;
+    private final HealthService healthService;
 
     /**
      * Create a new listener with dependencies.
@@ -27,13 +29,16 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param envConfig environment configuration
      * @param leaderboardService leaderboard service
      * @param levelUpService level-up service
+     * @param healthService health service
      */
     public SlashCommandListener(EnvConfig envConfig,
                                 LeaderboardService leaderboardService,
-                                LevelUpService levelUpService) {
+                                LevelUpService levelUpService,
+                                HealthService healthService) {
         this.envConfig = envConfig;
         this.leaderboardService = leaderboardService;
         this.levelUpService = levelUpService;
+        this.healthService = healthService;
     }
 
     /**
@@ -48,6 +53,7 @@ public class SlashCommandListener extends ListenerAdapter {
             case "link" -> handleLink(event);
             case "postleaderboard" -> handlePostLeaderboard(event);
             case "setleaderboard" -> handleSetLeaderboard(event);
+            case "health" -> handleHealth(event);
             default -> event.reply("Unknown command.").setEphemeral(true).queue();
         }
     }
@@ -131,6 +137,16 @@ public class SlashCommandListener extends ListenerAdapter {
         }
         leaderboardService.setLeaderboardChannel(channelId);
         event.reply("Leaderboard channel set.").setEphemeral(true).queue();
+    }
+
+    /**
+     * Handle the /health command.
+     *
+     * @param event slash command event
+     */
+    private void handleHealth(SlashCommandInteractionEvent event) {
+        String report = healthService.buildHealthReport(event.getJDA());
+        event.reply(report).queue();
     }
 
     /**

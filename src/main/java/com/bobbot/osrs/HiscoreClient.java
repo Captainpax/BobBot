@@ -24,12 +24,7 @@ public class HiscoreClient {
      * @throws InterruptedException on interrupted HTTP requests
      */
     public int fetchTotalLevel(String username) throws IOException, InterruptedException {
-        String encoded = URLEncoder.encode(username, StandardCharsets.UTF_8);
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(HISCORE_URL + encoded))
-                .GET()
-                .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = fetchResponse(username);
         if (response.statusCode() != 200) {
             throw new IOException("Hiscore lookup failed with status " + response.statusCode());
         }
@@ -40,5 +35,26 @@ public class HiscoreClient {
             throw new IOException("Unexpected hiscore format");
         }
         return Integer.parseInt(parts[1]);
+    }
+
+    /**
+     * Fetch the response status code for a player lookup.
+     *
+     * @param username OSRS username
+     * @return HTTP status code
+     * @throws IOException on HTTP failures
+     * @throws InterruptedException on interrupted HTTP requests
+     */
+    public int fetchStatusCode(String username) throws IOException, InterruptedException {
+        return fetchResponse(username).statusCode();
+    }
+
+    private HttpResponse<String> fetchResponse(String username) throws IOException, InterruptedException {
+        String encoded = URLEncoder.encode(username, StandardCharsets.UTF_8);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(HISCORE_URL + encoded))
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }
