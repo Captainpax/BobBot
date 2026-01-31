@@ -61,6 +61,9 @@ public class BotApp {
                 .addChoice("chat", "chat")
                 .addChoice("discord", "discord");
         OptionData inviteTargetId = new OptionData(OptionType.STRING, "target_id", "chat or guild ID", true);
+        OptionData powerAction = new OptionData(OptionType.STRING, "action", "restart or shutdown", true)
+                .addChoice("restart", "restart")
+                .addChoice("shutdown", "shutdown");
 
         LOGGER.info("Queueing slash command registration");
         jda.updateCommands()
@@ -80,9 +83,7 @@ public class BotApp {
                                         true),
                         Commands.slash("health", "Check bot health and stats"),
                         Commands.slash("power", "Restart or shutdown the bot")
-                                .addOption(OptionType.STRING, "action", "restart or shutdown", true)
-                                .addChoice("restart", "restart")
-                                .addChoice("shutdown", "shutdown")
+                                .addOptions(powerAction)
                 )
                 .queue(
                         success -> LOGGER.info("Slash command registration succeeded"),
