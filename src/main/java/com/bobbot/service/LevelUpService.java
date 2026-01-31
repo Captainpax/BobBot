@@ -2,6 +2,7 @@ package com.bobbot.service;
 
 import com.bobbot.config.EnvConfig;
 import com.bobbot.osrs.HiscoreClient;
+import com.bobbot.osrs.SkillStat;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.storage.PlayerRecord;
@@ -137,6 +138,18 @@ public class LevelUpService {
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;
+    }
+
+    /**
+     * Fetch a player's full hiscore stats.
+     *
+     * @param username OSRS username
+     * @return ordered skill stats
+     * @throws IOException on hiscore lookup failure
+     * @throws InterruptedException on interrupted HTTP requests
+     */
+    public List<SkillStat> fetchSkillStats(String username) throws IOException, InterruptedException {
+        return hiscoreClient.fetchSkillStats(username);
     }
 
     /**
