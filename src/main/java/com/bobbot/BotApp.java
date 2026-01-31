@@ -33,16 +33,20 @@ public class BotApp {
      * @throws InterruptedException if JDA fails to initialize
      */
     public static void main(String[] args) throws InterruptedException {
+        LOGGER.info("Booting BobBot");
         EnvConfig envConfig = EnvConfig.load();
+        LOGGER.info("Initializing storage at {}", envConfig.dataDirectory().toAbsolutePath());
         JsonStorage storage = new JsonStorage(envConfig.dataDirectory());
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
 
+        LOGGER.info("Building JDA client");
         JDA jda = JDABuilder.createDefault(envConfig.discordToken(), EnumSet.noneOf(GatewayIntent.class))
                 .setActivity(Activity.playing("OSRS levels"))
                 .addEventListeners(new SlashCommandListener(envConfig, leaderboardService, levelUpService))
                 .build()
                 .awaitReady();
+        LOGGER.info("JDA client ready");
 
         OptionData inviteTarget = new OptionData(OptionType.STRING, "target", "chat or discord", true)
                 .addChoice("chat", "chat")
@@ -68,6 +72,7 @@ public class BotApp {
                 .queue();
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        LOGGER.info("Scheduling background tasks");
         scheduler.scheduleAtFixedRate(() -> runLevelUpScan(levelUpService, jda),
                 0,
                 envConfig.pollInterval().toSeconds(),
