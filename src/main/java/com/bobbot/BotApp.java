@@ -50,7 +50,7 @@ public class BotApp {
 
         LOGGER.info("Building JDA client");
         JDA jda = JDABuilder.createDefault(envConfig.discordToken(),
-                        EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
+                        EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
                 .setActivity(Activity.playing("OSRS levels"))
                 .addEventListeners(
                         new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
