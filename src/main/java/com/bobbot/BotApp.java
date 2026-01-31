@@ -3,6 +3,8 @@ package com.bobbot;
 import com.bobbot.config.EnvConfig;
 import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
+import com.bobbot.discord.MentionHealthListener;
+import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
 import com.bobbot.storage.JsonStorage;
@@ -40,13 +42,16 @@ public class BotApp {
         JsonStorage storage = new JsonStorage(envConfig.dataDirectory());
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
+        HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
 
         LOGGER.info("Building JDA client");
-        JDA jda = JDABuilder.createDefault(envConfig.discordToken(), EnumSet.noneOf(GatewayIntent.class))
+        JDA jda = JDABuilder.createDefault(envConfig.discordToken(),
+                        EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
                 .setActivity(Activity.playing("OSRS levels"))
                 .addEventListeners(
-                        new SlashCommandListener(envConfig, leaderboardService, levelUpService),
-                        new ReadyNotificationListener(envConfig)
+                        new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
+                        new ReadyNotificationListener(envConfig),
+                        new MentionHealthListener(healthService)
                 )
                 .build()
                 .awaitReady();
@@ -72,7 +77,8 @@ public class BotApp {
                                 .addOption(OptionType.STRING,
                                         "channel_id",
                                         "Discord channel ID",
-                                        true)
+                                        true),
+                        Commands.slash("health", "Check bot health and stats")
                 )
                 .queue(
                         success -> LOGGER.info("Slash command registration succeeded"),
