@@ -48,17 +48,28 @@ public class BotApp {
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
 
+        if (!envConfig.hasDiscordToken()) {
+            LOGGER.error("Discord token not configured. Bot will remain offline until a valid token is provided.");
+            return;
+        }
+
         LOGGER.info("Building JDA client");
-        JDA jda = JDABuilder.createDefault(envConfig.discordToken(),
-                        EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
-                .setActivity(Activity.playing("OSRS levels"))
-                .addEventListeners(
-                        new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
-                        new ReadyNotificationListener(envConfig),
-                        new MentionHealthListener(healthService)
-                )
-                .build()
-                .awaitReady();
+        JDA jda;
+        try {
+            jda = JDABuilder.createDefault(envConfig.discordToken(),
+                            EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
+                    .setActivity(Activity.playing("OSRS levels"))
+                    .addEventListeners(
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
+                            new ReadyNotificationListener(envConfig),
+                            new MentionHealthListener(healthService)
+                    )
+                    .build()
+                    .awaitReady();
+        } catch (Exception e) {
+            LOGGER.error("Failed to initialize JDA. Check that the Discord token is valid and the gateway is reachable.", e);
+            return;
+        }
         LOGGER.info("JDA client ready");
         healthHttpServer.setJda(Optional.of(jda));
 
