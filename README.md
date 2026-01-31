@@ -43,15 +43,15 @@ docker run --rm \
 ```
 
 ## Environment variables
-Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurations, and `.env` files. Dashed names are only supported for Docker `-e` usage.
+Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurations, and `.env` files. Docker accepts uppercase names reliably across operating systems, while dashed names may be ignored by some container runtimes.
 
 ### Mandatory
 - `DISCORD_TOKEN`
-  - Discord bot token. (Docker `-e` only: `discord-token`)
+  - Discord bot token.
 
 ### Optional
 - `DISCORD_SUPERUSER_ID`
-  - Discord user ID allowed to run privileged commands. (Docker `-e` only: `discord-superuser-id`)
+  - Discord user ID allowed to run privileged commands.
 - `LEADERBOARD_INTERVAL`
   - How often to post the leaderboard. Accepts seconds (`300`) or `s/m/h` suffix (`60m`). Default: `60m`.
 - `POLL_INTERVAL`
