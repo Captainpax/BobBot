@@ -8,6 +8,8 @@ import com.bobbot.storage.JsonStorage;
 import com.bobbot.storage.PlayerRecord;
 import com.bobbot.util.FormatUtils;
 import net.dv8tion.jda.api.JDA;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -20,6 +22,7 @@ import java.util.Set;
  * Service that builds a health report for the bot.
  */
 public class HealthService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(HealthService.class);
     private final Instant startedAt;
     private final EnvConfig envConfig;
     private final JsonStorage storage;
@@ -179,6 +182,47 @@ public class HealthService {
      */
     public boolean isSuperuser(String userId) {
         return userId != null && userId.equals(envConfig.superuserId());
+    }
+
+    /**
+     * Send an AI thinking log to the superuser.
+     *
+     * @param jda JDA instance
+     * @param author the user who triggered the AI
+     * @param prompt the prompt sent to the AI
+     * @param thinking the thinking log from the AI
+     */
+    public void sendThinkingLog(JDA jda, net.dv8tion.jda.api.entities.User author, String prompt, String thinking) {
+        String superuserId = envConfig.superuserId();
+        if (superuserId == null || superuserId.isBlank()) {
+            return;
+        }
+
+        jda.retrieveUserById(superuserId).queue(user -> {
+            user.openPrivateChannel().queue(channel -> {
+                String header = String.format("**AI Thinking Log**\n" +
+                                "**For:** %s (%s)\n" +
+                                "**Prompt:** %s\n",
+                        author.getAsTag(),
+                        author.getId(),
+                        prompt);
+                
+                channel.sendMessage(header).queue();
+
+                // Split thinking log into chunks if necessary
+                if (thinking.length() <= 1900) {
+                    channel.sendMessage("```\n" + thinking + "\n```").queue();
+                } else {
+                    int start = 0;
+                    while (start < thinking.length()) {
+                        int end = Math.min(start + 1900, thinking.length());
+                        String chunk = thinking.substring(start, end);
+                        channel.sendMessage("```\n" + chunk + "\n```").queue();
+                        start = end;
+                    }
+                }
+            });
+        }, error -> LOGGER.warn("Failed to retrieve superuser {} to send thinking log", superuserId, error));
     }
 
     /**

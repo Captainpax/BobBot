@@ -1,6 +1,6 @@
 # BobBot (OSRS Level Tracker)
 
-A lightweight Discord bot built with **Java 21** and **JDA 6.3.0** that posts when linked Old School RuneScape players gain total levels. Storage is JSON-based (one file per collection) and ready for a future MongoDB swap.
+A lightweight Discord bot built with **Java 21** and **JDA 5.2.2** that posts when linked Old School RuneScape players gain total levels. Storage is JSON-based (one file per collection) and ready for a future MongoDB swap.
 
 ## What this bot does
 - Polls OSRS hiscores for linked players.
@@ -96,6 +96,9 @@ See `template.env` for a copy/paste starter file that lists all variables with e
 ## Data files
 - `data/players.json` — map of Discord user IDs to linked OSRS usernames and last total level
 - `data/settings.json` — stored channel ID for leaderboard posts
+
+## Customization
+- `personality.txt` — Create this file in the project root or `data/` directory to define Bob's personality. If present, the AI will use these instructions to shape its responses.
 
 ## Notes
 - Discord bots cannot be added to group DMs; use servers for announcements.

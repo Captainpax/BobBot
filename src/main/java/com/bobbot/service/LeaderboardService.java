@@ -151,6 +151,35 @@ public class LeaderboardService {
         return skills.get(ThreadLocalRandom.current().nextInt(skills.size()));
     }
 
+    /**
+     * Get a string representation of the current leaderboard for the AI.
+     *
+     * @return formatted leaderboard string
+     */
+    public String getLeaderboardSummary() {
+        Map<String, PlayerRecord> players = storage.loadPlayers();
+        if (players.isEmpty()) {
+            return "No players are currently linked to the bot.";
+        }
+
+        List<PlayerRecord> records = new ArrayList<>(players.values());
+        records.sort(Comparator.comparingInt(PlayerRecord::getLastTotalLevel).reversed());
+
+        StringBuilder sb = new StringBuilder("Current OSRS Leaderboard:\n");
+        int rank = 1;
+        for (PlayerRecord record : records) {
+            sb.append(String.format("%d. %s - Total Level: %d (%,d XP)\n", 
+                rank++, record.getUsername(), record.getLastTotalLevel(), record.getLastTotalXp()));
+        }
+        
+        String weeklyTop = getHighestWeeklyXpGain();
+        if (!"none".equals(weeklyTop)) {
+            sb.append("\nWeekly Top XP Gain: ").append(weeklyTop);
+        }
+        
+        return sb.toString();
+    }
+
     private Map<String, SkillStat> fetchSkillStats(Skill skill, Map<String, PlayerRecord> players) {
         Map<String, SkillStat> stats = new HashMap<>();
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
@@ -164,7 +193,11 @@ public class LeaderboardService {
                 if (stat != null) {
                     stats.put(entry.getKey(), stat);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
                 // best effort
             }
         }

@@ -20,8 +20,9 @@ import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInterac
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.Command;
-import net.dv8tion.jda.api.interactions.components.buttons.*;
-import net.dv8tion.jda.api.interactions.components.*;
+import net.dv8tion.jda.api.interactions.callbacks.IReplyCallback;
+import net.dv8tion.jda.api.interactions.components.ActionRow;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -289,7 +290,7 @@ public class SlashCommandListener extends ListenerAdapter {
         sendStats(event, userId, skillFilter, true);
     }
 
-    private void sendStats(SlashCommandInteractionEvent event, String userId, String skillFilter, boolean ephemeral) {
+    private void sendStats(IReplyCallback event, String userId, String skillFilter, boolean ephemeral) {
         try {
             PlayerRecord record = levelUpService.refreshPlayer(userId);
             if (record == null) {
@@ -370,7 +371,7 @@ public class SlashCommandListener extends ListenerAdapter {
                 String message = messages.get(i);
                 var action = event.getHook().sendMessage(message);
                 if (ephemeral && i == messages.size() - 1) {
-                    action.addActionRow(Button.primary("share:stats:" + userId + ":" + skillFilter, "Show to all"));
+                    action.addComponents(ActionRow.of(Button.primary("share:stats:" + userId + ":" + skillFilter, "Show to all")));
                 }
                 action.queue();
             }
@@ -489,8 +490,13 @@ public class SlashCommandListener extends ListenerAdapter {
 
         event.deferReply(true).queue();
         try {
-            String response = aiService.generateResponse(prompt);
-            event.getHook().sendMessage("**Prompt:** " + prompt + "\n**AI Response:** " + response).queue();
+            String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
+            AiService.AiResult result = aiService.generateResponse(prompt, event.getUser().getId(), event.getChannel().getId(), guildId);
+            event.getHook().sendMessage("**Prompt:** " + prompt + "\n**AI Response:** " + result.content()).queue();
+
+            if (!result.thinking().isBlank()) {
+                healthService.sendThinkingLog(event.getJDA(), event.getUser(), prompt, result.thinking());
+            }
         } catch (Exception e) {
             LOGGER.error("AI test failed", e);
             event.getHook().sendMessage("AI test failed: " + e.getMessage()).queue();
@@ -728,6 +734,20 @@ public class SlashCommandListener extends ListenerAdapter {
                 stat.skill().displayName(),
                 stat.level(),
                 xpToNext);
+    }
+
+    @Override
+    public void onButtonInteraction(ButtonInteractionEvent event) {
+        String componentId = event.getComponentId();
+        if (componentId.startsWith("share:stats:")) {
+            String[] parts = componentId.split(":");
+            if (parts.length >= 4) {
+                String userId = parts[2];
+                String skillFilter = parts[3];
+                event.deferReply().queue();
+                sendStats(event, userId, skillFilter, false);
+            }
+        }
     }
 
 }

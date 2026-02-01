@@ -1,6 +1,8 @@
 package com.bobbot.discord;
 
+import com.bobbot.config.EnvConfig;
 import com.bobbot.service.AiService;
+import com.bobbot.service.HealthService;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
@@ -15,10 +17,12 @@ public class AiMessageListener extends ListenerAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(AiMessageListener.class);
     private final JsonStorage storage;
     private final AiService aiService;
+    private final HealthService healthService;
 
-    public AiMessageListener(JsonStorage storage, AiService aiService) {
+    public AiMessageListener(JsonStorage storage, AiService aiService, HealthService healthService) {
         this.storage = storage;
         this.aiService = aiService;
+        this.healthService = healthService;
     }
 
     @Override
@@ -49,8 +53,13 @@ public class AiMessageListener extends ListenerAdapter {
 
             event.getChannel().sendTyping().queue();
             try {
-                String response = aiService.generateResponse(content);
-                event.getMessage().reply(response).queue();
+                String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
+                AiService.AiResult result = aiService.generateResponse(content, event.getAuthor().getId(), event.getChannel().getId(), guildId);
+                event.getMessage().reply(result.content()).queue();
+
+                if (!result.thinking().isBlank()) {
+                    healthService.sendThinkingLog(event.getJDA(), event.getAuthor(), content, result.thinking());
+                }
             } catch (Exception e) {
                 LOGGER.error("Failed to generate AI response", e);
                 event.getMessage().reply("Sorry, I'm having trouble thinking right now.").queue();

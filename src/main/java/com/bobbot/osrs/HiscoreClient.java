@@ -27,8 +27,11 @@ public class HiscoreClient {
      */
     public SkillStat fetchOverallStat(String username) throws IOException, InterruptedException {
         HttpResponse<String> response = fetchResponse(username);
+        if (response.statusCode() == 404) {
+            throw new IOException("Player '" + username + "' not found on OSRS hiscores. They might be unranked or have changed their name.");
+        }
         if (response.statusCode() != 200) {
-            throw new IOException("Hiscore lookup failed with status " + response.statusCode());
+            throw new IOException("OSRS hiscore lookup failed for '" + username + "' with HTTP status " + response.statusCode() + ". Jagex might be having issues.");
         }
         String body = response.body();
         String firstLine = body.split("\\R", 2)[0];
@@ -69,8 +72,11 @@ public class HiscoreClient {
      */
     public List<SkillStat> fetchSkillStats(String username) throws IOException, InterruptedException {
         HttpResponse<String> response = fetchResponse(username);
+        if (response.statusCode() == 404) {
+            throw new IOException("Player '" + username + "' not found on OSRS hiscores. They might be unranked or have changed their name.");
+        }
         if (response.statusCode() != 200) {
-            throw new IOException("Hiscore lookup failed with status " + response.statusCode());
+            throw new IOException("OSRS hiscore lookup failed for '" + username + "' with HTTP status " + response.statusCode() + ". Jagex might be having issues.");
         }
         String[] lines = response.body().split("\\R");
         List<SkillStat> stats = new ArrayList<>();

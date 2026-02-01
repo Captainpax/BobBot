@@ -19,20 +19,19 @@ import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
-import net.dv8tion.jda.api.interactions.IntegrationType;
-import net.dv8tion.jda.api.interactions.InteractionContextType;
+import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
 import net.dv8tion.jda.api.interactions.commands.build.SubcommandGroupData;
-import net.dv8tion.jda.api.requests.GatewayIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.bobbot.discord.RoleListener;
 
 import java.util.EnumSet;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -57,7 +56,7 @@ public class BotApp {
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
         PriceService priceService = new PriceService();
-        AiService aiService = new AiService(storage, envConfig.dataDirectory());
+        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService);
         RoleService roleService = new RoleService();
         ConfigService configService = new ConfigService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
@@ -71,17 +70,19 @@ public class BotApp {
 
         LOGGER.info("Building JDA client");
         String configuredStatus = BotStatus.normalize(storage.loadSettings().getBotStatus());
+        ExecutorService eventPool = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() * 4));
         JDA jda;
         try {
             jda = JDABuilder.createDefault(envConfig.discordToken(),
                             EnumSet.of(GatewayIntent.GUILD_MESSAGES, GatewayIntent.DIRECT_MESSAGES, GatewayIntent.MESSAGE_CONTENT))
                     .setStatus(BotStatus.toOnlineStatus(configuredStatus))
                     .setActivity(Activity.playing("OSRS levels"))
+                    .setEventPool(eventPool)
                     .addEventListeners(
                             new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService),
                             new ReadyNotificationListener(envConfig),
                             new MentionHealthListener(healthService),
-                            new AiMessageListener(storage, aiService),
+                            new AiMessageListener(storage, aiService, healthService),
                             new RoleListener(roleService, healthService, storage, envConfig)
                     )
                     .build()
@@ -91,6 +92,7 @@ public class BotApp {
             return;
         }
         LOGGER.info("JDA client ready");
+        aiService.setJda(jda);
         healthHttpServer.setJda(Optional.of(jda));
         leaderboardService.updateBotActivity(jda);
 
@@ -108,19 +110,9 @@ public class BotApp {
         OptionData skillOption = new OptionData(OptionType.STRING, "skill", "Specific skill (leave empty for all/random)", false, true);
 
         LOGGER.info("Queueing slash command registration");
-        EnumSet<InteractionContextType> dmAndGuild = EnumSet.of(
-                InteractionContextType.GUILD,
-                InteractionContextType.BOT_DM
-        );
-        EnumSet<IntegrationType> installTypes = EnumSet.of(
-                IntegrationType.GUILD_INSTALL,
-                IntegrationType.USER_INSTALL
-        );
         jda.updateCommands()
                 .addCommands(
                         Commands.slash("os", "OSRS player commands")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes)
                                 .addSubcommands(
                                         new SubcommandData("link", "Link an Old School RuneScape username")
                                                 .addOption(OptionType.STRING, "player_name", "Your OSRS username", true),
@@ -131,8 +123,6 @@ public class BotApp {
                                                 .addOption(OptionType.STRING, "item", "The name of the item", true)
                                 ),
                         Commands.slash("admin", "Administrative commands")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes)
                                 .addSubcommandGroups(
                                         new SubcommandGroupData("manage", "Bot management and health")
                                                 .addSubcommands(
@@ -198,6 +188,7 @@ public class BotApp {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Shutting down scheduler and JDA");
             scheduler.shutdownNow();
+            eventPool.shutdownNow();
             jda.shutdown();
             healthHttpServer.stop();
         }));

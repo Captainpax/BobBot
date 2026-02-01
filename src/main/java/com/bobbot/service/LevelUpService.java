@@ -115,6 +115,9 @@ public class LevelUpService {
                     updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));
                 }
             } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 LOGGER.warn("Failed to fetch level for {}", record.getUsername());
             }
         }
@@ -154,6 +157,9 @@ public class LevelUpService {
                 PlayerRecord newRecord = record.withLevel(overall.level(), overall.xp());
                 updated.put(entry.getKey(), newRecord);
             } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 // keep existing record
             }
         }
