@@ -1,6 +1,9 @@
 package com.bobbot.service;
 
+import com.bobbot.osrs.OsrsApiClient;
+import com.bobbot.osrs.SkillStat;
 import com.bobbot.storage.BotSettings;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.util.FormatUtils;
 import dev.langchain4j.agent.tool.Tool;
@@ -67,6 +70,7 @@ public class AiService {
     private final HealthService healthService;
     private final PaginationService paginationService;
     private final WikiService wikiService;
+    private final OsrsApiClient apiClient;
 
     private JDA jda;
     private final Map<String, ChatMemory> memories = new ConcurrentHashMap<>();
@@ -180,7 +184,7 @@ public class AiService {
         }
     };
 
-    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService, PaginationService paginationService, WikiService wikiService) {
+    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService, PaginationService paginationService, WikiService wikiService, OsrsApiClient apiClient) {
         this.storage = storage;
         this.dataDir = dataDir;
         this.priceService = priceService;
@@ -189,6 +193,7 @@ public class AiService {
         this.healthService = healthService;
         this.paginationService = paginationService;
         this.wikiService = wikiService;
+        this.apiClient = apiClient;
     }
 
     public void setJda(JDA jda) {
@@ -560,6 +565,44 @@ public class AiService {
                         (xpDiff > 0 ? "+" : ""), xpDiff);
             } catch (Exception e) {
                 return "Error comparing skills: " + e.getMessage();
+            }
+        }
+
+        @Tool("Get detailed information about an OSRS quest by its name (e.g., 'Dragon Slayer')")
+        public String get_quest_info(String quest_name) {
+            try {
+                return apiClient.fetchQuestInfo(quest_name)
+                        .map(node -> {
+                            StringBuilder sb = new StringBuilder();
+                            sb.append("Quest: ").append(node.path("name").asText()).append("\n");
+                            sb.append("Difficulty: ").append(node.path("difficulty").asText()).append("\n");
+                            sb.append("Length: ").append(node.path("length").asText()).append("\n");
+                            sb.append("Requirements: ").append(node.path("requirements").toString()).append("\n");
+                            sb.append("Rewards: ").append(node.path("rewards").toString());
+                            return sb.toString();
+                        })
+                        .orElse("I couldn't find any info on a quest named '" + quest_name + "'. Maybe check the spelling, mate?");
+            } catch (Exception e) {
+                return "Error fetching quest info: " + e.getMessage();
+            }
+        }
+
+        @Tool("Get the list of possible slayer tasks for a specific slayer master (Duradel, Nieve, Konar)")
+        public String get_slayer_tasks(String master_name) {
+            try {
+                List<JsonNode> tasks = apiClient.fetchSlayerTasks(master_name);
+                if (tasks.isEmpty()) {
+                    return "I couldn't find any tasks for " + master_name + ". I only know about Duradel, Nieve, and Konar, mate.";
+                }
+                List<String> taskNames = tasks.stream()
+                        .map(t -> t.path("name").asText())
+                        .distinct()
+                        .sorted()
+                        .toList();
+                
+                return "Slayer tasks for " + master_name + ":\n" + String.join(", ", taskNames);
+            } catch (Exception e) {
+                return "Error fetching slayer tasks: " + e.getMessage();
             }
         }
     }

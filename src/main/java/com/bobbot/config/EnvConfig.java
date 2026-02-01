@@ -26,7 +26,8 @@ public record EnvConfig(
         Duration pollInterval,
         Path dataDirectory,
         int healthPort,
-        String environment
+        String environment,
+        String osrsApiUrl
 ) {
     private static final Logger LOGGER = LoggerFactory.getLogger(EnvConfig.class);
 
@@ -48,19 +49,21 @@ public record EnvConfig(
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
         int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT", "PORT");
         String environment = detectEnvironment(env);
-        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort, environment);
+        String osrsApiUrl = firstEnvValue(env, "osrs-api-url", "osrs_api_url", "OSRS_API_URL").orElse("http://localhost:3000");
+        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort, environment, osrsApiUrl);
         if (!config.hasDiscordToken()) {
             LOGGER.error("Discord token missing. Set discord-token, discord_token, or DISCORD_TOKEN to start the bot.");
         }
         LOGGER.info(
-                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}, environment: {}",
+                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}, environment: {}, osrs api url: {}",
                 tokenEnv.map(ResolvedEnv::key).orElse("missing"),
                 !superuser.isBlank(),
                 leaderboardInterval,
                 pollInterval,
                 dataDir.toAbsolutePath(),
                 healthPort,
-                environment.isBlank() ? "not set" : environment
+                environment.isBlank() ? "not set" : environment,
+                osrsApiUrl
         );
         return config;
     }

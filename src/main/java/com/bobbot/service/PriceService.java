@@ -12,8 +12,8 @@ import java.util.Optional;
 public class PriceService {
     private final OsrsItemClient itemClient;
 
-    public PriceService() {
-        this.itemClient = new OsrsItemClient();
+    public PriceService(OsrsItemClient itemClient) {
+        this.itemClient = itemClient;
     }
 
     /**
@@ -25,20 +25,23 @@ public class PriceService {
      * @throws InterruptedException on interrupted requests
      */
     public Optional<PriceInfo> lookupPrice(String itemName) throws IOException, InterruptedException {
-        Optional<OsrsItemClient.ItemMapping> mapping = itemClient.findItem(itemName);
-        if (mapping.isEmpty()) {
-            // Try partial search if exact match fails
+        Optional<OsrsItemClient.ItemPrice> price = itemClient.fetchPriceByName(itemName);
+        if (price.isEmpty()) {
+            // Try searching
             List<OsrsItemClient.ItemMapping> searchResults = itemClient.searchItems(itemName, 1);
             if (searchResults.isEmpty()) {
                 return Optional.empty();
             }
-            mapping = Optional.of(searchResults.get(0));
+            OsrsItemClient.ItemMapping item = searchResults.get(0);
+            price = itemClient.fetchPriceByName(item.name());
+            return Optional.of(new PriceInfo(item.name(), price.orElse(null)));
         }
 
-        OsrsItemClient.ItemMapping item = mapping.get();
-        Optional<OsrsItemClient.ItemPrice> price = itemClient.fetchPrice(item.id());
+        // To get the "canonical" name if we found it directly
+        Optional<OsrsItemClient.ItemMapping> itemOpt = itemClient.findItem(itemName);
+        String finalName = itemOpt.map(OsrsItemClient.ItemMapping::name).orElse(itemName);
 
-        return Optional.of(new PriceInfo(item.name(), price.orElse(null)));
+        return Optional.of(new PriceInfo(finalName, price.get()));
     }
 
     public record PriceInfo(String itemName, OsrsItemClient.ItemPrice price) {}

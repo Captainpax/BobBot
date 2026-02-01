@@ -7,6 +7,9 @@ import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.discord.MentionHealthListener;
 import com.bobbot.discord.AiMessageListener;
 import com.bobbot.health.HealthHttpServer;
+import com.bobbot.osrs.HiscoreClient;
+import com.bobbot.osrs.OsrsApiClient;
+import com.bobbot.osrs.OsrsItemClient;
 import com.bobbot.osrs.Skill;
 import com.bobbot.service.AiService;
 import com.bobbot.service.ConfigService;
@@ -55,15 +58,20 @@ public class BotApp {
         EnvConfig envConfig = EnvConfig.load();
         LOGGER.info("Initializing storage at {}", envConfig.dataDirectory().toAbsolutePath());
         JsonStorage storage = new JsonStorage(envConfig.dataDirectory());
-        LevelUpService levelUpService = new LevelUpService(storage, envConfig);
+        
+        OsrsApiClient apiClient = new OsrsApiClient(envConfig.osrsApiUrl());
+        HiscoreClient hiscoreClient = new HiscoreClient(apiClient);
+        OsrsItemClient osrsItemClient = new OsrsItemClient(apiClient);
+        
+        LevelUpService levelUpService = new LevelUpService(storage, envConfig, hiscoreClient);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
-        PriceService priceService = new PriceService();
+        PriceService priceService = new PriceService(osrsItemClient);
         RoleService roleService = new RoleService();
         ConfigService configService = new ConfigService();
         PaginationService paginationService = new PaginationService();
-        WikiService wikiService = new WikiService();
-        HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
-        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService, wikiService);
+        WikiService wikiService = new WikiService(apiClient);
+        HealthService healthService = new HealthService(envConfig, storage, leaderboardService, hiscoreClient);
+        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService, wikiService, apiClient);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
 

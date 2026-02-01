@@ -1,58 +1,42 @@
 # BobBot (OSRS Level Tracker)
 
-A lightweight Discord bot built with **Java 21** and **JDA 5.2.2** that posts when linked Old School RuneScape players gain total levels. Storage is JSON-based (one file per collection) and ready for a future MongoDB swap.
+A lightweight Discord bot built with **Java 21** and **Node.js 22** that posts when linked Old School RuneScape players gain total levels. 
+
+## Architecture
+BobBot is now split into two components:
+1. **Java Bot**: The Discord interface built with **JDA 5.2.2**. It handles user interactions, storage, and logic.
+2. **Node.js API**: A dedicated API caller using **osrs-tools** and **osrs-json-hiscores**. It handles all data fetching from OSRS hiscores, the Grand Exchange, and the OSRS Wiki.
 
 ## What this bot does
-- Polls OSRS hiscores for linked players.
+- Polls OSRS hiscores via the Node.js API for linked players.
 - Posts a message when a player gains total levels.
 - Publishes a leaderboard on demand and on an interval.
+- Provides AI-powered chat with Bob, a seasoned OSRS veteran.
+- Fetches quest requirements and slayer task lists.
 - Exposes a lightweight `/health` HTTP endpoint for uptime checks.
-- Uses slash commands only.
 
 ## Project layout
-- `src/main/java/com/bobbot` — application entry point
-- `src/main/java/com/bobbot/discord` — slash command listener
-- `src/main/java/com/bobbot/osrs` — OSRS hiscore client
-- `src/main/java/com/bobbot/service` — level scan + leaderboard services
-- `src/main/java/com/bobbot/storage` — JSON storage and models
+- `src/main/java/com/bobbot` — Java Bot source code
+- `osrs-api/` — Node.js API source code
 - `data/` — runtime JSON data (created at runtime)
 
-## Build
+## Run with Docker Compose
+The easiest way to run BobBot is using Docker Compose:
+
 ```bash
-gradle clean build
+docker-compose up -d
 ```
 
-## Run locally
-```bash
-export DISCORD_TOKEN=YOUR_TOKEN
-export DISCORD_SUPERUSER_ID=YOUR_USER_ID
-gradle run
-```
-
-## Run with Docker
-```bash
-docker build -t bobbot .
-
-docker run --rm \
-  -e DISCORD_TOKEN=YOUR_TOKEN \
-  -e DISCORD_SUPERUSER_ID=YOUR_USER_ID \
-  -e LEADERBOARD_INTERVAL=60m \
-  -e POLL_INTERVAL=300 \
-  -e DATA_DIR=/data \
-  -e HEALTH_PORT=8080 \
-  -p 8080:8080 \
-  -v $(pwd)/data:/data \
-  bobbot
-```
+Ensure you have a `.env` file with your `DISCORD_TOKEN`.
 
 ## Environment variables
-Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurations, and `.env` files. Docker accepts uppercase names reliably across operating systems, while dashed names may be ignored by some container runtimes.
-
 ### Mandatory
 - `DISCORD_TOKEN`
   - Discord bot token.
 
 ### Optional
+- `OSRS_API_URL`
+  - The URL of the Node.js API. Default: `http://localhost:3000`.
 - `DISCORD_SUPERUSER_ID`
   - Discord user ID allowed to run privileged commands.
 - `LEADERBOARD_INTERVAL`

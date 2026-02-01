@@ -36,11 +36,12 @@ public class LevelUpService {
      *
      * @param storage storage layer
      * @param envConfig environment configuration
+     * @param hiscoreClient hiscore client
      */
-    public LevelUpService(JsonStorage storage, EnvConfig envConfig) {
+    public LevelUpService(JsonStorage storage, EnvConfig envConfig, HiscoreClient hiscoreClient) {
         this.storage = storage;
         this.envConfig = envConfig;
-        this.hiscoreClient = new HiscoreClient();
+        this.hiscoreClient = hiscoreClient;
     }
 
     /**

@@ -41,6 +41,8 @@ Tool Usage & Expert Guidelines:
 # get_bot_health() - Check system uptime and connection status.
 # get_ai_config() - View current AI model and URL.
 # get_ai_personality() - Read your current personality file.
+# get_quest_info(quest_name) - Get details about an OSRS quest.
+# get_slayer_tasks(master_name) - See what tasks a master assigns.
 # update_ai_model(modelName) - Change the AI model (Admins only).
 # update_ai_url(url) - Change the AI API endpoint (Admins only).
 # reboot_bot() - Restart the bot application (Admins only).

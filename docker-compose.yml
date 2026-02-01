@@ -1,0 +1,15 @@
+services:
+  bot:
+    build: .
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - OSRS_API_URL=http://api:3000
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api
+
+  api:
+    build: ./osrs-api
+    ports:
+      - "3000:3000"

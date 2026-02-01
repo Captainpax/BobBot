@@ -50,13 +50,14 @@ public class HealthService {
      * @param envConfig environment configuration
      * @param storage storage layer
      * @param leaderboardService leaderboard service
+     * @param hiscoreClient hiscore client
      */
-    public HealthService(EnvConfig envConfig, JsonStorage storage, LeaderboardService leaderboardService) {
+    public HealthService(EnvConfig envConfig, JsonStorage storage, LeaderboardService leaderboardService, HiscoreClient hiscoreClient) {
         this.startedAt = Instant.now();
         this.envConfig = envConfig;
         this.storage = storage;
         this.leaderboardService = leaderboardService;
-        this.hiscoreClient = new HiscoreClient();
+        this.hiscoreClient = hiscoreClient;
     }
 
     /**
