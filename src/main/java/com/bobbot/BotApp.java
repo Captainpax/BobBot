@@ -6,9 +6,11 @@ import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.discord.MentionHealthListener;
 import com.bobbot.health.HealthHttpServer;
+import com.bobbot.osrs.Skill;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
+import com.bobbot.service.PriceService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -18,6 +20,8 @@ import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
+import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import net.dv8tion.jda.api.interactions.commands.build.SubcommandGroupData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +51,7 @@ public class BotApp {
         JsonStorage storage = new JsonStorage(envConfig.dataDirectory());
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
+        PriceService priceService = new PriceService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
@@ -65,7 +70,7 @@ public class BotApp {
                     .setStatus(BotStatus.toOnlineStatus(configuredStatus))
                     .setActivity(Activity.playing("OSRS levels"))
                     .addEventListeners(
-                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService),
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService),
                             new ReadyNotificationListener(envConfig),
                             new MentionHealthListener(healthService)
                     )
@@ -77,6 +82,7 @@ public class BotApp {
         }
         LOGGER.info("JDA client ready");
         healthHttpServer.setJda(Optional.of(jda));
+        leaderboardService.updateBotActivity(jda);
 
         OptionData inviteTarget = new OptionData(OptionType.STRING, "target", "chat or discord", true)
                 .addChoice("chat", "chat")
@@ -89,6 +95,11 @@ public class BotApp {
                 .addChoice("online", "online")
                 .addChoice("busy", "busy")
                 .addChoice("offline", "offline");
+        OptionData skillOption = new OptionData(OptionType.STRING, "skill", "Specific skill or 'all'", false)
+                .addChoice("all", "all");
+        for (Skill skill : Skill.values()) {
+            skillOption.addChoice(skill.displayName(), skill.name().toLowerCase());
+        }
 
         LOGGER.info("Queueing slash command registration");
         EnumSet<InteractionContextType> dmAndGuild = EnumSet.of(
@@ -101,41 +112,47 @@ public class BotApp {
         );
         jda.updateCommands()
                 .addCommands(
-                        Commands.slash("invitebot", "Get an invite link or info for chat installs")
+                        Commands.slash("os", "OSRS player commands")
                                 .setContexts(dmAndGuild)
                                 .setIntegrationTypes(installTypes)
-                                .addOptions(inviteTarget, inviteTargetId),
-                        Commands.slash("link", "Link an Old School RuneScape username")
+                                .addSubcommands(
+                                        new SubcommandData("link", "Link an Old School RuneScape username")
+                                                .addOption(OptionType.STRING, "player_name", "Your OSRS username", true),
+                                        new SubcommandData("unlink", "Unlink your Old School RuneScape username"),
+                                        new SubcommandData("stats", "Show your current level and gains since the last leaderboard")
+                                                .addOptions(skillOption),
+                                        new SubcommandData("pricelookup", "Look up the current G.E. price of an item")
+                                                .addOption(OptionType.STRING, "item", "The name of the item", true)
+                                ),
+                        Commands.slash("admin", "Administrative commands")
                                 .setContexts(dmAndGuild)
                                 .setIntegrationTypes(installTypes)
-                                .addOption(OptionType.STRING,
-                                        "player_username",
-                                        "Your OSRS username",
-                                        true),
-                        Commands.slash("postleaderboard", "Post the current OSRS leaderboard")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes),
-                        Commands.slash("setleaderboard", "Set the channel for leaderboard posts")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes)
-                                .addOption(OptionType.STRING,
-                                        "channel_id",
-                                        "Discord channel ID",
-                                        true),
-                        Commands.slash("mystats", "Show your current level and gains since the last leaderboard")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes),
-                        Commands.slash("health", "Check bot health and stats")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes),
-                        Commands.slash("power", "Restart or shutdown the bot")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes)
-                                .addOptions(powerAction),
-                        Commands.slash("status", "Update the bot presence status")
-                                .setContexts(dmAndGuild)
-                                .setIntegrationTypes(installTypes)
-                                .addOptions(statusState)
+                                .addSubcommands(
+                                        new SubcommandData("invite", "Get an invite link or info for chat installs")
+                                                .addOptions(inviteTarget, inviteTargetId),
+                                        new SubcommandData("postleaderboard", "Post the current OSRS leaderboard")
+                                                .addOptions(skillOption),
+                                        new SubcommandData("setleaderboard", "Set the channel for leaderboard posts")
+                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true),
+                                        new SubcommandData("health", "Check bot health and stats"),
+                                        new SubcommandData("power", "Restart or shutdown the bot")
+                                                .addOptions(powerAction),
+                                        new SubcommandData("status", "Update the bot presence status")
+                                                .addOptions(statusState),
+                                        new SubcommandData("addadmin", "Add a user to the admin list")
+                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true),
+                                        new SubcommandData("removeadmin", "Remove a user from the admin list")
+                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true)
+                                )
+                                .addSubcommandGroups(
+                                        new SubcommandGroupData("set", "Update bot settings")
+                                                .addSubcommands(
+                                                        new SubcommandData("env", "Bot environment setting")
+                                                                .addOption(OptionType.STRING, "value", "Bot environment setting", true),
+                                                        new SubcommandData("bobschat", "Main channel for Bob's pings")
+                                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true)
+                                                )
+                                )
                 )
                 .queue(
                         success -> LOGGER.info("Slash command registration succeeded"),
@@ -146,7 +163,7 @@ public class BotApp {
         LOGGER.info("Scheduling background tasks with poll interval {} and leaderboard interval {}",
                 envConfig.pollInterval(),
                 envConfig.leaderboardInterval());
-        scheduler.scheduleAtFixedRate(() -> runLevelUpScan(levelUpService, jda),
+        scheduler.scheduleAtFixedRate(() -> runLevelUpScan(levelUpService, leaderboardService, jda),
                 0,
                 envConfig.pollInterval().toSeconds(),
                 TimeUnit.SECONDS);
@@ -168,11 +185,13 @@ public class BotApp {
      * Run a level-up scan with best-effort error handling.
      *
      * @param levelUpService service to scan levels
+     * @param leaderboardService service to update activity
      * @param jda active JDA client
      */
-    private static void runLevelUpScan(LevelUpService levelUpService, JDA jda) {
+    private static void runLevelUpScan(LevelUpService levelUpService, LeaderboardService leaderboardService, JDA jda) {
         try {
             levelUpService.scanForLevelUps(jda);
+            leaderboardService.updateBotActivity(jda);
         } catch (Exception e) {
             LOGGER.error("Level-up scan failed", e);
         }
@@ -187,7 +206,7 @@ public class BotApp {
     private static void runScheduledLeaderboard(LeaderboardService leaderboardService, JDA jda) {
         try {
             if (leaderboardService.isScheduledLeaderboardEnabled()) {
-                leaderboardService.postLeaderboard(jda, true);
+                leaderboardService.postLeaderboard(jda, true, null);
             }
         } catch (Exception e) {
             LOGGER.error("Scheduled leaderboard post failed", e);

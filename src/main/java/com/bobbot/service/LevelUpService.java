@@ -51,12 +51,29 @@ public class LevelUpService {
      */
     public PlayerRecord linkPlayer(String discordUserId, String username) throws IOException, InterruptedException {
         Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
-        int totalLevel = hiscoreClient.fetchTotalLevel(username);
+        SkillStat overall = hiscoreClient.fetchOverallStat(username);
         Instant snapshotTime = Instant.now();
-        PlayerRecord updated = new PlayerRecord(username, totalLevel, snapshotTime, null, totalLevel, snapshotTime);
+        PlayerRecord updated = new PlayerRecord(username, overall.level(), overall.xp(), snapshotTime, null,
+                overall.level(), overall.xp(), snapshotTime);
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;
+    }
+
+    /**
+     * Unlink a Discord user from their OSRS username.
+     *
+     * @param discordUserId Discord user ID
+     * @return true if a player was unlinked, false if they weren't linked
+     */
+    public boolean unlinkPlayer(String discordUserId) {
+        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
+        if (players.containsKey(discordUserId)) {
+            players.remove(discordUserId);
+            storage.savePlayers(players);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -70,20 +87,32 @@ public class LevelUpService {
             return;
         }
         BotSettings settings = storage.loadSettings();
-        MessageChannel channel = resolveChannel(jda, settings.getLeaderboardChannelId());
+        MessageChannel leaderboardChannel = resolveChannel(jda, settings.getLeaderboardChannelId());
+        MessageChannel bobsChatChannel = resolveChannel(jda, settings.getBobsChatChannelId());
         Map<String, PlayerRecord> updated = new HashMap<>(players);
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
             String discordUserId = entry.getKey();
             PlayerRecord record = entry.getValue();
             try {
-                int totalLevel = hiscoreClient.fetchTotalLevel(record.getUsername());
-                if (totalLevel > record.getLastTotalLevel()) {
-                    int gained = totalLevel - record.getLastTotalLevel();
-                    updated.put(discordUserId, record.withLevel(totalLevel));
-                    if (channel != null) {
-                        channel.sendMessage(String.format("%s leveled up! +%d total levels (now %d).",
-                                record.getUsername(), gained, totalLevel)).queue();
+                SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
+                if (overall.level() > record.getLastTotalLevel()) {
+                    int gained = overall.level() - record.getLastTotalLevel();
+                    updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));
+
+                    String message = String.format("%s leveled up! +%d total levels (now %d).",
+                            record.getUsername(), gained, overall.level());
+
+                    if (leaderboardChannel != null) {
+                        leaderboardChannel.sendMessage(message).queue();
                     }
+
+                    if (bobsChatChannel != null) {
+                        String pingMessage = String.format("<@%s> you leveled up! %s is now total level %d (+%d).",
+                                discordUserId, record.getUsername(), overall.level(), gained);
+                        bobsChatChannel.sendMessage(pingMessage).queue();
+                    }
+                } else if (overall.xp() > record.getLastTotalXp()) {
+                    updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));
                 }
             } catch (IOException | InterruptedException e) {
                 LOGGER.warn("Failed to fetch level for {}", record.getUsername());
@@ -121,8 +150,8 @@ public class LevelUpService {
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
             PlayerRecord record = entry.getValue();
             try {
-                int totalLevel = hiscoreClient.fetchTotalLevel(record.getUsername());
-                PlayerRecord newRecord = record.withLevel(totalLevel);
+                SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
+                PlayerRecord newRecord = record.withLevel(overall.level(), overall.xp());
                 updated.put(entry.getKey(), newRecord);
             } catch (IOException | InterruptedException e) {
                 // keep existing record
@@ -146,8 +175,8 @@ public class LevelUpService {
         if (record == null) {
             return null;
         }
-        int totalLevel = hiscoreClient.fetchTotalLevel(record.getUsername());
-        PlayerRecord updated = record.withLevel(totalLevel);
+        SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
+        PlayerRecord updated = record.withLevel(overall.level(), overall.xp());
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;

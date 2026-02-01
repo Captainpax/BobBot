@@ -68,12 +68,23 @@ Prefer `DISCORD_TOKEN` and other uppercase names for shells, IDE run configurati
 See `template.env` for a copy/paste starter file that lists all variables with examples.
 
 ## Slash commands
-- `/invitebot <target> <target_id>`
-  - `target`: `chat` or `discord`
-  - `target_id`: chat name or guild ID to reference in the reply
-- `/link <player_username>`
-- `/postleaderboard`
-- `/setleaderboard <channel_id>`
+### Player Commands (`/os`)
+- `/os link <player_name>` — Link your Discord account to an OSRS username.
+- `/os unlink` — Unlink your OSRS username.
+- `/os stats [skill]` — Show your current levels and gains. Optional `skill` filters for one skill (e.g., `attack`, `mining`) or `all`.
+- `/os pricelookup <item>` — Look up the current G.E. price of an item.
+
+### Admin Commands (`/admin`)
+- `/admin postleaderboard [skill]` — Manually post the leaderboard. Optional `skill` forces a specific skill leaderboard.
+- `/admin setleaderboard <channel_id>` — Set the channel where level-ups and leaderboards are posted.
+- `/admin set env <value>` — Update the bot's environment setting (e.g., `production`, `development`).
+- `/admin set bobschat <channel_id>` — Set the main channel for Bob's pings.
+- `/admin invite <target> <target_id>` — Get an invite link or info for chat installs.
+- `/admin health` — Check bot health and connectivity.
+- `/admin status <state>` — Update the bot's presence status (`online`, `busy`, `offline`).
+- `/admin power <action>` — Restart or shutdown the bot.
+- `/admin addadmin <user_id>` — Add a user to the persistent admin list.
+- `/admin removeadmin <user_id>` — Remove a user from the admin list.
 
 ## Health endpoint
 - `GET /health` returns a plain-text status report with Discord connectivity, OSRS probe, and scheduling details.

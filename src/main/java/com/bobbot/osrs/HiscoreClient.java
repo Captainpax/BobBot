@@ -18,6 +18,24 @@ public class HiscoreClient {
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     /**
+     * Fetch a player's total level and XP (Overall stat) from the OSRS hiscore lite endpoint.
+     *
+     * @param username OSRS username
+     * @return overall stat
+     * @throws IOException on HTTP or parse failures
+     * @throws InterruptedException on interrupted HTTP requests
+     */
+    public SkillStat fetchOverallStat(String username) throws IOException, InterruptedException {
+        HttpResponse<String> response = fetchResponse(username);
+        if (response.statusCode() != 200) {
+            throw new IOException("Hiscore lookup failed with status " + response.statusCode());
+        }
+        String body = response.body();
+        String firstLine = body.split("\\R", 2)[0];
+        return parseSkillLine(Skill.TOTAL, firstLine);
+    }
+
+    /**
      * Fetch a player's total level from the OSRS hiscore lite endpoint.
      *
      * @param username OSRS username
@@ -26,17 +44,7 @@ public class HiscoreClient {
      * @throws InterruptedException on interrupted HTTP requests
      */
     public int fetchTotalLevel(String username) throws IOException, InterruptedException {
-        HttpResponse<String> response = fetchResponse(username);
-        if (response.statusCode() != 200) {
-            throw new IOException("Hiscore lookup failed with status " + response.statusCode());
-        }
-        String body = response.body();
-        String firstLine = body.split("\\R", 2)[0];
-        String[] parts = firstLine.split(",");
-        if (parts.length < 2) {
-            throw new IOException("Unexpected hiscore format");
-        }
-        return Integer.parseInt(parts[1]);
+        return fetchOverallStat(username).level();
     }
 
     /**

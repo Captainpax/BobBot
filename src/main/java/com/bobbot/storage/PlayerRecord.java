@@ -11,9 +11,11 @@ import java.time.Instant;
 public class PlayerRecord {
     private final String username;
     private final int lastTotalLevel;
+    private final long lastTotalXp;
     private final Instant lastCheckedAt;
     private final Integer lastLeaderboardTotalLevel;
     private final Integer lastWeeklySnapshotTotalLevel;
+    private final Long lastWeeklySnapshotTotalXp;
     private final Instant lastWeeklySnapshotAt;
 
     /**
@@ -21,25 +23,31 @@ public class PlayerRecord {
      *
      * @param username OSRS username
      * @param lastTotalLevel last known total level
+     * @param lastTotalXp last known total experience
      * @param lastCheckedAt last time refreshed
      * @param lastLeaderboardTotalLevel last total level at leaderboard time
      * @param lastWeeklySnapshotTotalLevel total level at the start of the current week
+     * @param lastWeeklySnapshotTotalXp total XP at the start of the current week
      * @param lastWeeklySnapshotAt timestamp for the weekly snapshot
      */
     @JsonCreator
     public PlayerRecord(
             @JsonProperty("username") String username,
             @JsonProperty("lastTotalLevel") int lastTotalLevel,
+            @JsonProperty("lastTotalXp") long lastTotalXp,
             @JsonProperty("lastCheckedAt") Instant lastCheckedAt,
             @JsonProperty("lastLeaderboardTotalLevel") Integer lastLeaderboardTotalLevel,
             @JsonProperty("lastWeeklySnapshotTotalLevel") Integer lastWeeklySnapshotTotalLevel,
+            @JsonProperty("lastWeeklySnapshotTotalXp") Long lastWeeklySnapshotTotalXp,
             @JsonProperty("lastWeeklySnapshotAt") Instant lastWeeklySnapshotAt
     ) {
         this.username = username;
         this.lastTotalLevel = lastTotalLevel;
+        this.lastTotalXp = lastTotalXp;
         this.lastCheckedAt = lastCheckedAt;
         this.lastLeaderboardTotalLevel = lastLeaderboardTotalLevel;
         this.lastWeeklySnapshotTotalLevel = lastWeeklySnapshotTotalLevel;
+        this.lastWeeklySnapshotTotalXp = lastWeeklySnapshotTotalXp;
         this.lastWeeklySnapshotAt = lastWeeklySnapshotAt;
     }
 
@@ -55,6 +63,13 @@ public class PlayerRecord {
      */
     public int getLastTotalLevel() {
         return lastTotalLevel;
+    }
+
+    /**
+     * @return last known total XP
+     */
+    public long getLastTotalXp() {
+        return lastTotalXp;
     }
 
     /**
@@ -79,6 +94,13 @@ public class PlayerRecord {
     }
 
     /**
+     * @return weekly snapshot total XP
+     */
+    public Long getLastWeeklySnapshotTotalXp() {
+        return lastWeeklySnapshotTotalXp;
+    }
+
+    /**
      * @return weekly snapshot timestamp
      */
     public Instant getLastWeeklySnapshotAt() {
@@ -86,25 +108,27 @@ public class PlayerRecord {
     }
 
     /**
-     * Create a copy with a new total level and refreshed timestamp.
+     * Create a copy with a new total level/XP and refreshed timestamp.
      *
      * @param totalLevel updated total level
+     * @param totalXp updated total XP
      * @return new player record
      */
-    public PlayerRecord withLevel(int totalLevel) {
-        return new PlayerRecord(username, totalLevel, Instant.now(), lastLeaderboardTotalLevel,
-                lastWeeklySnapshotTotalLevel, lastWeeklySnapshotAt);
+    public PlayerRecord withLevel(int totalLevel, long totalXp) {
+        return new PlayerRecord(username, totalLevel, totalXp, Instant.now(), lastLeaderboardTotalLevel,
+                lastWeeklySnapshotTotalLevel, lastWeeklySnapshotTotalXp, lastWeeklySnapshotAt);
     }
 
     /**
-     * Create a copy with a new username and total level.
+     * Create a copy with a new username and total level/XP.
      *
      * @param newUsername updated username
      * @param totalLevel updated total level
+     * @param totalXp updated total XP
      * @return new player record
      */
-    public PlayerRecord withUsername(String newUsername, int totalLevel) {
-        return new PlayerRecord(newUsername, totalLevel, Instant.now(), null, null, null);
+    public PlayerRecord withUsername(String newUsername, int totalLevel, long totalXp) {
+        return new PlayerRecord(newUsername, totalLevel, totalXp, Instant.now(), null, null, null, null);
     }
 
     /**
@@ -114,19 +138,20 @@ public class PlayerRecord {
      * @return new player record
      */
     public PlayerRecord withLeaderboardSnapshot(int totalLevel) {
-        return new PlayerRecord(username, lastTotalLevel, lastCheckedAt, totalLevel,
-                lastWeeklySnapshotTotalLevel, lastWeeklySnapshotAt);
+        return new PlayerRecord(username, lastTotalLevel, lastTotalXp, lastCheckedAt, totalLevel,
+                lastWeeklySnapshotTotalLevel, lastWeeklySnapshotTotalXp, lastWeeklySnapshotAt);
     }
 
     /**
-     * Create a copy with a new weekly snapshot level and timestamp.
+     * Create a copy with a new weekly snapshot level/XP and timestamp.
      *
      * @param totalLevel weekly snapshot total level
+     * @param totalXp weekly snapshot total XP
      * @param snapshotAt weekly snapshot time
      * @return new player record
      */
-    public PlayerRecord withWeeklySnapshot(int totalLevel, Instant snapshotAt) {
-        return new PlayerRecord(username, lastTotalLevel, lastCheckedAt, lastLeaderboardTotalLevel,
-                totalLevel, snapshotAt);
+    public PlayerRecord withWeeklySnapshot(int totalLevel, long totalXp, Instant snapshotAt) {
+        return new PlayerRecord(username, lastTotalLevel, lastTotalXp, lastCheckedAt, lastLeaderboardTotalLevel,
+                totalLevel, totalXp, snapshotAt);
     }
 }

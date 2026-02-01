@@ -47,8 +47,9 @@ public class LeaderboardService {
      *
      * @param jda active JDA client
      * @param scheduled true when invoked by the scheduler
+     * @param forcedSkill optional skill to force on the leaderboard
      */
-    public void postLeaderboard(JDA jda, boolean scheduled) {
+    public void postLeaderboard(JDA jda, boolean scheduled, Skill forcedSkill) {
         BotSettings settings = storage.loadSettings();
         MessageChannel channel = levelUpService.resolveChannel(jda, settings.getLeaderboardChannelId());
         if (channel == null) {
@@ -59,7 +60,7 @@ public class LeaderboardService {
             channel.sendMessage("No linked players yet. Use /link to add someone.").queue();
             return;
         }
-        Skill skill = pickRandomSkill();
+        Skill skill = (forcedSkill != null) ? forcedSkill : pickRandomSkill();
         Map<String, SkillStat> skillStats = fetchSkillStats(skill, players);
         Instant now = Instant.now();
         Instant weekStart = startOfWeek(now);
@@ -170,6 +171,28 @@ public class LeaderboardService {
         return stats;
     }
 
+    /**
+     * Update the bot's presence activity with the highest weekly XP gain.
+     *
+     * @param jda active JDA client
+     */
+    public void updateBotActivity(JDA jda) {
+        if (jda == null) {
+            return;
+        }
+        Instant now = Instant.now();
+        Instant weekStart = startOfWeek(now);
+        Map<String, PlayerRecord> players = storage.loadPlayers();
+        ensureWeeklySnapshots(players, weekStart);
+
+        String highestGain = getHighestWeeklyXpGain();
+        if ("none".equals(highestGain)) {
+            jda.getPresence().setActivity(net.dv8tion.jda.api.entities.Activity.playing("OSRS levels"));
+        } else {
+            jda.getPresence().setActivity(net.dv8tion.jda.api.entities.Activity.playing("Weekly Top: " + highestGain));
+        }
+    }
+
     private Map<String, PlayerRecord> ensureWeeklySnapshots(Map<String, PlayerRecord> players, Instant weekStart) {
         Map<String, PlayerRecord> updated = new HashMap<>(players);
         boolean changed = false;
@@ -177,7 +200,8 @@ public class LeaderboardService {
             PlayerRecord record = entry.getValue();
             Instant lastWeeklyAt = record.getLastWeeklySnapshotAt();
             if (lastWeeklyAt == null || lastWeeklyAt.isBefore(weekStart)) {
-                updated.put(entry.getKey(), record.withWeeklySnapshot(record.getLastTotalLevel(), weekStart));
+                updated.put(entry.getKey(), record.withWeeklySnapshot(record.getLastTotalLevel(),
+                        record.getLastTotalXp(), weekStart));
                 changed = true;
             }
         }
@@ -185,6 +209,36 @@ public class LeaderboardService {
             storage.savePlayers(updated);
         }
         return updated;
+    }
+
+    /**
+     * Resolve the highest weekly XP gain among all players.
+     *
+     * @return formatted string of the highest gain, or "none"
+     */
+    public String getHighestWeeklyXpGain() {
+        Map<String, PlayerRecord> players = storage.loadPlayers();
+        if (players.isEmpty()) {
+            return "none";
+        }
+        PlayerRecord best = null;
+        long maxGain = -1;
+
+        for (PlayerRecord record : players.values()) {
+            if (record.getLastWeeklySnapshotTotalXp() != null) {
+                long gain = record.getLastTotalXp() - record.getLastWeeklySnapshotTotalXp();
+                if (gain > maxGain) {
+                    maxGain = gain;
+                    best = record;
+                }
+            }
+        }
+
+        if (best == null || maxGain <= 0) {
+            return "none";
+        }
+
+        return String.format("%s: +%,d XP", best.getUsername(), maxGain);
     }
 
     private Instant startOfWeek(Instant now) {
