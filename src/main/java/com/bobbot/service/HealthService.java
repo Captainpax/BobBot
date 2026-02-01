@@ -78,6 +78,8 @@ public class HealthService {
         builder.append("- bobs chat channel: ")
                 .append(data.bobsChatChannelId() == null || data.bobsChatChannelId().isBlank() ? "not set" : data.bobsChatChannelId())
                 .append("\n");
+        builder.append("- ai url: ").append(data.aiUrl() == null || data.aiUrl().isBlank() ? "not set" : data.aiUrl()).append("\n");
+        builder.append("- ai model: ").append(data.aiModel() == null || data.aiModel().isBlank() ? "not set" : data.aiModel()).append("\n");
         builder.append("- scheduled leaderboard: ").append(data.scheduledLeaderboard()).append("\n");
         builder.append("- leaderboard interval: ").append(data.leaderboardInterval()).append("\n");
         builder.append("- poll interval: ").append(data.pollInterval()).append("\n");
@@ -108,6 +110,8 @@ public class HealthService {
                 resolveTopXpUser(),
                 settings.getLeaderboardChannelId(),
                 settings.getBobsChatChannelId(),
+                settings.getAiUrl(),
+                settings.getAiModel(),
                 leaderboardService.isScheduledLeaderboardEnabled(),
                 envConfig.leaderboardInterval(),
                 envConfig.pollInterval()
@@ -128,6 +132,8 @@ public class HealthService {
             String topXpUser,
             String leaderboardChannelId,
             String bobsChatChannelId,
+            String aiUrl,
+            String aiModel,
             boolean scheduledLeaderboard,
             Duration leaderboardInterval,
             Duration pollInterval

@@ -16,6 +16,8 @@ public class BotSettings {
     private final String bobsChatChannelId;
     private final String botStatus;
     private final String environment;
+    private final String aiUrl;
+    private final String aiModel;
     private final Instant lastLeaderboardTimestamp;
     private final Set<String> adminUserIds;
 
@@ -26,6 +28,8 @@ public class BotSettings {
      * @param bobsChatChannelId main channel for Bob's pings
      * @param botStatus configured bot presence status
      * @param environment bot environment setting
+     * @param aiUrl AI API URL
+     * @param aiModel AI model name
      * @param lastLeaderboardTimestamp last leaderboard timestamp
      * @param adminUserIds list of admin user IDs
      */
@@ -34,12 +38,16 @@ public class BotSettings {
                        @JsonProperty("bobsChatChannelId") String bobsChatChannelId,
                        @JsonProperty("botStatus") String botStatus,
                        @JsonProperty("environment") String environment,
+                       @JsonProperty("aiUrl") String aiUrl,
+                       @JsonProperty("aiModel") String aiModel,
                        @JsonProperty("lastLeaderboardTimestamp") Instant lastLeaderboardTimestamp,
                        @JsonProperty("adminUserIds") Set<String> adminUserIds) {
         this.leaderboardChannelId = leaderboardChannelId;
         this.bobsChatChannelId = bobsChatChannelId;
         this.botStatus = botStatus;
         this.environment = environment;
+        this.aiUrl = aiUrl;
+        this.aiModel = aiModel;
         this.lastLeaderboardTimestamp = lastLeaderboardTimestamp;
         this.adminUserIds = adminUserIds != null ? new HashSet<>(adminUserIds) : new HashSet<>();
     }
@@ -73,6 +81,20 @@ public class BotSettings {
     }
 
     /**
+     * @return AI API URL
+     */
+    public String getAiUrl() {
+        return aiUrl;
+    }
+
+    /**
+     * @return AI model name
+     */
+    public String getAiModel() {
+        return aiModel;
+    }
+
+    /**
      * @return last leaderboard timestamp
      */
     public Instant getLastLeaderboardTimestamp() {
@@ -93,7 +115,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withLeaderboardChannelId(String channelId) {
-        return new BotSettings(channelId, bobsChatChannelId, botStatus, environment, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(channelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
     }
 
     /**
@@ -103,7 +125,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withBobsChatChannelId(String channelId) {
-        return new BotSettings(leaderboardChannelId, channelId, botStatus, environment, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, channelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
     }
 
     /**
@@ -113,7 +135,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withBotStatus(String status) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, status, environment, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, status, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
     }
 
     /**
@@ -123,7 +145,27 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withEnvironment(String environment) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+    }
+
+    /**
+     * Create a new settings object with the given AI URL.
+     *
+     * @param aiUrl AI API URL
+     * @return updated settings
+     */
+    public BotSettings withAiUrl(String aiUrl) {
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+    }
+
+    /**
+     * Create a new settings object with the given AI model.
+     *
+     * @param aiModel AI model name
+     * @return updated settings
+     */
+    public BotSettings withAiModel(String aiModel) {
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
     }
 
     /**
@@ -133,7 +175,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withLastLeaderboardTimestamp(Instant timestamp) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, timestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, timestamp, adminUserIds);
     }
 
     /**
@@ -143,6 +185,6 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withAdminUserIds(Set<String> adminUserIds) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
     }
 }

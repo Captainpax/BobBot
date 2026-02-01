@@ -5,12 +5,15 @@ import com.bobbot.discord.BotStatus;
 import com.bobbot.discord.ReadyNotificationListener;
 import com.bobbot.discord.SlashCommandListener;
 import com.bobbot.discord.MentionHealthListener;
+import com.bobbot.discord.AiMessageListener;
 import com.bobbot.health.HealthHttpServer;
 import com.bobbot.osrs.Skill;
+import com.bobbot.service.AiService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
 import com.bobbot.service.PriceService;
+import com.bobbot.service.RoleService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -25,6 +28,7 @@ import net.dv8tion.jda.api.interactions.commands.build.SubcommandGroupData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.bobbot.discord.RoleListener;
 
 import java.util.EnumSet;
 import java.util.Optional;
@@ -52,6 +56,8 @@ public class BotApp {
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
         PriceService priceService = new PriceService();
+        AiService aiService = new AiService(storage, envConfig.dataDirectory());
+        RoleService roleService = new RoleService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
@@ -70,9 +76,11 @@ public class BotApp {
                     .setStatus(BotStatus.toOnlineStatus(configuredStatus))
                     .setActivity(Activity.playing("OSRS levels"))
                     .addEventListeners(
-                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService),
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService),
                             new ReadyNotificationListener(envConfig),
-                            new MentionHealthListener(healthService)
+                            new MentionHealthListener(healthService),
+                            new AiMessageListener(storage, aiService),
+                            new RoleListener(roleService, healthService, storage, envConfig)
                     )
                     .build()
                     .awaitReady();
@@ -151,6 +159,15 @@ public class BotApp {
                                                                 .addOption(OptionType.STRING, "value", "Bot environment setting", true),
                                                         new SubcommandData("bobschat", "Main channel for Bob's pings")
                                                                 .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true)
+                                                ),
+                                        new SubcommandGroupData("ai", "AI configuration")
+                                                .addSubcommands(
+                                                        new SubcommandData("url", "Set the AI API URL")
+                                                                .addOption(OptionType.STRING, "url", "URL:Port or FQDN", true),
+                                                        new SubcommandData("model", "Set the AI model name")
+                                                                .addOption(OptionType.STRING, "model", "Model name", true),
+                                                        new SubcommandData("personality", "Upload a personality.txt file")
+                                                                .addOption(OptionType.ATTACHMENT, "file", "The personality.txt file", true)
                                                 )
                                 )
                 )

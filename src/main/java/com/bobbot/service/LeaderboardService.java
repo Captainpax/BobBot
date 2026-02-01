@@ -319,6 +319,7 @@ public class LeaderboardService {
             case RUNECRAFT -> "🔮";
             case HUNTER -> "🪤";
             case CONSTRUCTION -> "🏗️";
+            case SAILING -> "⛵";
             default -> "🎯";
         };
     }

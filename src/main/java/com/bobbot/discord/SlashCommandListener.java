@@ -4,10 +4,12 @@ import com.bobbot.config.EnvConfig;
 import com.bobbot.osrs.OsrsXpTable;
 import com.bobbot.osrs.Skill;
 import com.bobbot.osrs.SkillStat;
+import com.bobbot.service.AiService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
 import com.bobbot.service.PriceService;
+import com.bobbot.service.RoleService;
 import com.bobbot.storage.PlayerRecord;
 import com.bobbot.util.FormatUtils;
 import net.dv8tion.jda.api.JDA;
@@ -36,6 +38,8 @@ public class SlashCommandListener extends ListenerAdapter {
     private final LevelUpService levelUpService;
     private final HealthService healthService;
     private final PriceService priceService;
+    private final AiService aiService;
+    private final RoleService roleService;
 
     /**
      * Create a new listener with dependencies.
@@ -45,17 +49,23 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param levelUpService level-up service
      * @param healthService health service
      * @param priceService price lookup service
+     * @param aiService AI service
+     * @param roleService role service
      */
     public SlashCommandListener(EnvConfig envConfig,
                                 LeaderboardService leaderboardService,
                                 LevelUpService levelUpService,
                                 HealthService healthService,
-                                PriceService priceService) {
+                                PriceService priceService,
+                                AiService aiService,
+                                RoleService roleService) {
         this.envConfig = envConfig;
         this.leaderboardService = leaderboardService;
         this.levelUpService = levelUpService;
         this.healthService = healthService;
         this.priceService = priceService;
+        this.aiService = aiService;
+        this.roleService = roleService;
     }
 
     /**
@@ -88,6 +98,8 @@ public class SlashCommandListener extends ListenerAdapter {
                 }
                 if ("set".equals(group)) {
                     handleAdminSet(event);
+                } else if ("ai".equals(group)) {
+                    handleAdminAi(event);
                 } else {
                     switch (subcommand != null ? subcommand : "") {
                         case "invite" -> handleInvite(event);
@@ -358,6 +370,55 @@ public class SlashCommandListener extends ListenerAdapter {
     }
 
     /**
+     * Handle the /admin ai command group.
+     *
+     * @param event slash command event
+     */
+    private void handleAdminAi(SlashCommandInteractionEvent event) {
+        String subcommand = event.getSubcommandName();
+        if ("url".equals(subcommand)) {
+            String url = getRequiredOption(event, "url");
+            if (url != null) {
+                aiService.updateAiUrl(url);
+                event.reply("AI API URL updated to: " + url).setEphemeral(true).queue();
+            }
+        } else if ("model".equals(subcommand)) {
+            String model = getRequiredOption(event, "model");
+            if (model != null) {
+                aiService.updateAiModel(model);
+                event.reply("AI model updated to: " + model).setEphemeral(true).queue();
+            }
+        } else if ("personality".equals(subcommand)) {
+            net.dv8tion.jda.api.interactions.commands.OptionMapping fileOpt = event.getOption("file");
+            if (fileOpt == null) {
+                event.reply("Missing required file attachment.").setEphemeral(true).queue();
+                return;
+            }
+            net.dv8tion.jda.api.entities.Message.Attachment attachment = fileOpt.getAsAttachment();
+            if (!attachment.getFileName().equalsIgnoreCase("personality.txt")) {
+                event.reply("Only files named 'personality.txt' are accepted.").setEphemeral(true).queue();
+                return;
+            }
+
+            event.deferReply(true).queue();
+            attachment.getProxy().download().thenAccept(inputStream -> {
+                try {
+                    String content = new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    aiService.savePersonality(content);
+                    event.getHook().sendMessage("Personality updated from personality.txt.").queue();
+                } catch (IOException e) {
+                    LOGGER.error("Failed to read uploaded personality.txt", e);
+                    event.getHook().sendMessage("Failed to read the uploaded file.").queue();
+                }
+            }).exceptionally(throwable -> {
+                LOGGER.error("Failed to download personality.txt", throwable);
+                event.getHook().sendMessage("Failed to download the uploaded file.").queue();
+                return null;
+            });
+        }
+    }
+
+    /**
      * Handle the /admin set command.
      *
      * @param event slash command event
@@ -434,6 +495,13 @@ public class SlashCommandListener extends ListenerAdapter {
         current = DiscordFormatUtils.appendTableSection(messages, current, "⚙️ **Configuration**",
                 "| Setting | Value |", "|:--|--:|", configRows, false);
 
+        // Section: AI
+        List<String> aiRows = new ArrayList<>();
+        aiRows.add(String.format("| URL | %s |", data.aiUrl() == null ? "not set" : data.aiUrl()));
+        aiRows.add(String.format("| Model | %s |", data.aiModel() == null ? "not set" : data.aiModel()));
+        current = DiscordFormatUtils.appendTableSection(messages, current, "🤖 **AI**",
+                "| Setting | Value |", "|:--|--:|", aiRows, false);
+
         messages.add(current.toString());
         for (String message : messages) {
             event.getHook().sendMessage(message).queue();
@@ -503,7 +571,8 @@ public class SlashCommandListener extends ListenerAdapter {
             return;
         }
         if (healthService.addAdmin(userId)) {
-            event.reply("Added <@" + userId + "> to the admin list.").setEphemeral(true).queue();
+            roleService.assignRoleToAdmin(event.getJDA(), userId);
+            event.reply("Added <@" + userId + "> to the admin list and synced roles.").setEphemeral(true).queue();
         } else {
             event.reply("User is already an admin or superuser.").setEphemeral(true).queue();
         }
@@ -524,7 +593,8 @@ public class SlashCommandListener extends ListenerAdapter {
             return;
         }
         if (healthService.removeAdmin(userId)) {
-            event.reply("Removed <@" + userId + "> from the admin list.").setEphemeral(true).queue();
+            roleService.removeRoleFromAdmin(event.getJDA(), userId);
+            event.reply("Removed <@" + userId + "> from the admin list and synced roles.").setEphemeral(true).queue();
         } else {
             event.reply("User was not in the admin list.").setEphemeral(true).queue();
         }

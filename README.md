@@ -79,6 +79,9 @@ See `template.env` for a copy/paste starter file that lists all variables with e
 - `/admin setleaderboard <channel_id>` — Set the channel where level-ups and leaderboards are posted.
 - `/admin set env <value>` — Update the bot's environment setting (e.g., `production`, `development`).
 - `/admin set bobschat <channel_id>` — Set the main channel for Bob's pings.
+- `/admin ai url <url>` — Set the local AI API URL (OpenAI-compatible).
+- `/admin ai model <model>` — Set the AI model name.
+- `/admin ai personality <file>` — Upload a `personality.txt` file to define Bob's personality.
 - `/admin invite <target> <target_id>` — Get an invite link or info for chat installs.
 - `/admin health` — Check bot health and connectivity.
 - `/admin status <state>` — Update the bot's presence status (`online`, `busy`, `offline`).

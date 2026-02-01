@@ -31,7 +31,8 @@ public enum Skill {
     FARMING(20, "Farming"),
     RUNECRAFT(21, "Runecraft"),
     HUNTER(22, "Hunter"),
-    CONSTRUCTION(23, "Construction");
+    CONSTRUCTION(23, "Construction"),
+    SAILING(24, "Sailing");
 
     private static final List<Skill> ORDERED = Arrays.stream(values())
             .sorted(Comparator.comparingInt(Skill::lineIndex))
