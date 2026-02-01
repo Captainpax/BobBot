@@ -29,4 +29,23 @@ public final class FormatUtils {
         }
         return String.format("%ds", remainingSeconds);
     }
+
+    /**
+     * Check if a string could be a valid OSRS username.
+     * OSRS usernames are 1-12 characters long and contain only letters, numbers, spaces, underscores, or hyphens.
+     *
+     * @param username the username to check
+     * @return true if it looks valid
+     */
+    public static boolean isValidOsrsUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        String trimmed = username.trim();
+        if (trimmed.length() > 12) {
+            return false;
+        }
+        // OSRS usernames allow letters, numbers, spaces, underscores, and hyphens
+        return trimmed.matches("^[a-zA-Z0-9\\s_-]+$");
+    }
 }

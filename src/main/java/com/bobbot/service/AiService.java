@@ -2,6 +2,7 @@ package com.bobbot.service;
 
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
+import com.bobbot.util.FormatUtils;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -27,6 +28,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +65,7 @@ public class AiService {
     private final LevelUpService levelUpService;
     private final LeaderboardService leaderboardService;
     private final HealthService healthService;
+    private final PaginationService paginationService;
 
     private JDA jda;
     private final Map<String, ChatMemory> memories = new ConcurrentHashMap<>();
@@ -72,7 +76,15 @@ public class AiService {
 
     private static final ThreadLocal<String> CURRENT_USER_ID = new ThreadLocal<>();
     private static final ThreadLocal<String> CURRENT_GUILD_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> LAST_PAGINATION_ID = new ThreadLocal<>();
     private static final ThreadLocal<StringBuilder> THINKING_ACCUMULATOR = ThreadLocal.withInitial(StringBuilder::new);
+    private static final ThreadLocal<Map<String, Integer>> TOOL_CALL_MAP = ThreadLocal.withInitial(HashMap::new);
+
+    private static class LoopDetectedException extends RuntimeException {
+        public LoopDetectedException(String message) {
+            super(message);
+        }
+    }
 
     private final ChatModelListener thinkingListener = new ChatModelListener() {
         @Override
@@ -97,7 +109,25 @@ public class AiService {
                 } catch (Exception ignored2) {}
             }
 
-            // 2. Fallback: Extract from text if it contains <think> tags
+            // 2. Capture tool calls and check for loops
+            if (aiMessage.hasToolExecutionRequests()) {
+                aiMessage.toolExecutionRequests().forEach(request -> {
+                    String key = request.name() + ":" + request.arguments();
+                    int count = TOOL_CALL_MAP.get().merge(key, 1, Integer::sum);
+                    if (count > 2) {
+                        throw new LoopDetectedException("Detected repetitive tool call: " + key);
+                    }
+
+                    THINKING_ACCUMULATOR.get()
+                        .append("[Tool Call] ")
+                        .append(request.name())
+                        .append(" with args: ")
+                        .append(request.arguments())
+                        .append("\n");
+                });
+            }
+
+            // 3. Fallback: Extract from text if it contains <think> tags
             String text = aiMessage.text();
             if (text != null && text.contains("<think>")) {
                 int start = text.indexOf("<think>");
@@ -127,24 +157,34 @@ public class AiService {
 
         @Override
         public void onRequest(ChatModelRequestContext context) {
-            // No thinking to capture on request
+            context.request().messages().forEach(message -> {
+                if (message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage toolResult) {
+                    THINKING_ACCUMULATOR.get()
+                        .append("[Tool Result] ")
+                        .append(toolResult.toolName())
+                        .append(": ")
+                        .append(toolResult.text())
+                        .append("\n");
+                }
+            });
         }
     };
 
-    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService) {
+    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService, PaginationService paginationService) {
         this.storage = storage;
         this.dataDir = dataDir;
         this.priceService = priceService;
         this.levelUpService = levelUpService;
         this.leaderboardService = leaderboardService;
         this.healthService = healthService;
+        this.paginationService = paginationService;
     }
 
     public void setJda(JDA jda) {
         this.jda = jda;
     }
 
-    public record AiResult(String thinking, String content) {}
+    public record AiResult(String thinking, String content, String paginationSessionId) {}
 
     interface Assistant {
         @SystemMessage("{{systemPrompt}}")
@@ -208,8 +248,17 @@ public class AiService {
             }
         }
 
-        @Tool("Get the OSRS stats (all skills) for a specific player by their username")
+        @Tool("Get the OSRS stats (all skills) for a specific player by their OSRS username. OSRS usernames are max 12 characters and contain no special symbols. Do NOT use this for your own stats, skill names, or general chat.")
         public String get_player_stats(String username) {
+            if (username != null && username.equalsIgnoreCase("bob")) {
+                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_stats'.";
+            }
+            if (!FormatUtils.isValidOsrsUsername(username)) {
+                return String.format("'%s' does not look like a valid OSRS username, mate. Usernames are max 12 characters and only have letters, numbers, spaces, underscores, or hyphens. If you're just chatting with me, don't use this tool.", username);
+            }
+            if (com.bobbot.osrs.Skill.findByName(username).isPresent()) {
+                return String.format("'%s' is an OSRS skill, not a player name. If you meant to check YOUR OWN stats, use 'get_my_stats'. If you meant another player, use their OSRS username.", username);
+            }
             try {
                 var stats = levelUpService.fetchSkillStats(username);
                 return formatStats(username, stats);
@@ -219,52 +268,49 @@ public class AiService {
                     return "Error: Request was interrupted.";
                 }
                 LOGGER.error("Error in get_player_stats tool", e);
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("not found on OSRS hiscores")) {
+                    return String.format("Player '%s' not found. If this is an OSRS item (like a 'bond'), use the 'get_item_price' tool instead. If it is a skill name, use 'get_my_skill' instead. Do NOT keep trying to look up this name as a player.", username);
+                }
                 return "Error fetching stats for " + username + ": " + e.getMessage();
             }
         }
 
-        @Tool("Get the level and XP for a specific skill for a specific player by their username")
+        @Tool("Get the level and XP for a specific skill for a specific player by their OSRS username. OSRS usernames are max 12 characters and contain no special symbols. Do NOT use this for your own stats or general chat.")
         public String get_player_skill(String username, String skillName) {
+            if (username != null && username.equalsIgnoreCase("bob")) {
+                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_skill'.";
+            }
+            if (!FormatUtils.isValidOsrsUsername(username)) {
+                return String.format("'%s' does not look like a valid OSRS username, mate. Usernames are max 12 characters and only have letters, numbers, spaces, underscores, or hyphens. If you're just chatting with me, don't use this tool.", username);
+            }
+            if (com.bobbot.osrs.Skill.findByName(username).isPresent()) {
+                return String.format("'%s' is an OSRS skill, not a player name. If you meant to check YOUR OWN level, use 'get_my_skill' and specify '%s' as the skill.", username, skillName);
+            }
             try {
-                String normalizedSkill = skillName.toLowerCase().trim();
-                // Common aliases
-                if (normalizedSkill.equals("wc")) normalizedSkill = "woodcutting";
-                if (normalizedSkill.equals("rc")) normalizedSkill = "runecraft";
-                if (normalizedSkill.equals("hp")) normalizedSkill = "hitpoints";
-                if (normalizedSkill.equals("con")) normalizedSkill = "construction";
-                if (normalizedSkill.equals("fm")) normalizedSkill = "firemaking";
-                if (normalizedSkill.equals("herb")) normalizedSkill = "herblore";
-                if (normalizedSkill.equals("agil")) normalizedSkill = "agility";
-                if (normalizedSkill.equals("thiev")) normalizedSkill = "thieving";
-                if (normalizedSkill.equals("slay")) normalizedSkill = "slayer";
-                if (normalizedSkill.equals("farm")) normalizedSkill = "farming";
-                if (normalizedSkill.equals("hunt")) normalizedSkill = "hunter";
-                if (normalizedSkill.equals("str")) normalizedSkill = "strength";
-                if (normalizedSkill.equals("att")) normalizedSkill = "attack";
-                if (normalizedSkill.equals("def")) normalizedSkill = "defence";
-                if (normalizedSkill.equals("pray")) normalizedSkill = "prayer";
-                if (normalizedSkill.equals("mage")) normalizedSkill = "magic";
-                if (normalizedSkill.equals("cook")) normalizedSkill = "cooking";
-                if (normalizedSkill.equals("fish")) normalizedSkill = "fishing";
-                if (normalizedSkill.equals("fletch")) normalizedSkill = "fletching";
-                if (normalizedSkill.equals("smith")) normalizedSkill = "smithing";
-                if (normalizedSkill.equals("mine")) normalizedSkill = "mining";
-                if (normalizedSkill.equals("craft")) normalizedSkill = "crafting";
-
-                final String finalSkill = normalizedSkill;
+                var skillOpt = com.bobbot.osrs.Skill.findByName(skillName);
+                if (skillOpt.isEmpty()) {
+                    return "Skill '" + skillName + "' not found. Valid skills: " + 
+                            java.util.Arrays.stream(com.bobbot.osrs.Skill.values()).map(com.bobbot.osrs.Skill::displayName).collect(java.util.stream.Collectors.joining(", "));
+                }
+                
+                com.bobbot.osrs.Skill finalSkill = skillOpt.get();
                 var stats = levelUpService.fetchSkillStats(username);
                 return stats.stream()
-                        .filter(s -> s.skill().name().equalsIgnoreCase(finalSkill) || s.skill().displayName().equalsIgnoreCase(finalSkill))
+                        .filter(s -> s.skill() == finalSkill)
                         .findFirst()
                         .map(s -> String.format("Player: %s, Skill: %s, Level: %d, XP: %,d", username, s.skill().displayName(), s.level(), s.xp()))
-                        .orElse("Skill '" + skillName + "' not found. Valid skills: " + 
-                                java.util.Arrays.stream(com.bobbot.osrs.Skill.values()).map(com.bobbot.osrs.Skill::displayName).collect(java.util.stream.Collectors.joining(", ")));
+                        .orElse("Player '" + username + "' is unranked in " + finalSkill.displayName() + ".");
             } catch (Exception e) {
                 if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                     return "Error: Request was interrupted.";
                 }
                 LOGGER.error("Error in get_player_skill tool", e);
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("not found on OSRS hiscores")) {
+                    return String.format("Player '%s' not found. If this is an OSRS item (like a 'bond'), use the 'get_item_price' tool instead. If it is a skill name, use 'get_my_skill' instead. Do NOT keep trying to look up this name as a player.", username);
+                }
                 return "Error fetching " + skillName + " for " + username + ": " + e.getMessage();
             }
         }
@@ -300,6 +346,10 @@ public class AiService {
             
             // Clean up name/mention
             String query = nameOrMention.replace("@", "").replace("<", "").replace(">", "").replace("!", "").trim();
+
+            if (query.equalsIgnoreCase("bob")) {
+                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_stats'.";
+            }
             
             // 1. Try to find by ID if it's a mention
             if (query.matches("\\d+")) {
@@ -417,6 +467,79 @@ public class AiService {
 
             return "Stopping the bot. Logging out... see you in Lumbridge!";
         }
+
+        @Tool("Display a long list of items or information in a paginated view with buttons. Use this when you have a lot of data to show (e.g. many player stats, price lists, or search results).")
+        public String display_paginated_report(String title, List<String> items) {
+            if (items == null || items.isEmpty()) return "Nothing to show in the report, mate.";
+            String sessionId = paginationService.createSession(title, "", items, 10);
+            LAST_PAGINATION_ID.set(sessionId);
+            return "Paginated report created with title '" + title + "' and " + items.size() + " items. I will attach the interactive buttons to my response automatically. Just tell the user you've generated the report and summarize what's in it.";
+        }
+
+        @Tool("Compare the current Grand Exchange prices of two OSRS items")
+        public String compare_prices(String item1, String item2) {
+            try {
+                var info1Opt = priceService.lookupPrice(item1);
+                var info2Opt = priceService.lookupPrice(item2);
+
+                if (info1Opt.isEmpty()) return "I couldn't find an item named '" + item1 + "'.";
+                if (info2Opt.isEmpty()) return "I couldn't find an item named '" + item2 + "'.";
+
+                var info1 = info1Opt.get();
+                var info2 = info2Opt.get();
+
+                if (info1.price() == null || info2.price() == null) return "Price data is missing for one of those items.";
+
+                long p1 = info1.price().high() != null ? info1.price().high() : info1.price().low();
+                long p2 = info2.price().high() != null ? info2.price().high() : info2.price().low();
+                long diff = p1 - p2;
+
+                return String.format("Comparison: %s is %,d GP, %s is %,d GP. Difference: %s%,d GP.",
+                        info1.itemName(), p1,
+                        info2.itemName(), p2,
+                        (diff > 0 ? "+" : ""), diff);
+            } catch (Exception e) {
+                return "Error comparing prices: " + e.getMessage();
+            }
+        }
+
+        @Tool("Compare two of the user's own OSRS skills (level and XP)")
+        public String compare_my_skills(String skill1, String skill2) {
+            String userId = CURRENT_USER_ID.get();
+            if (userId == null) return "Error: No user context found.";
+            try {
+                var record = levelUpService.refreshPlayer(userId);
+                if (record == null) return "You haven't linked your OSRS account yet!";
+
+                var stats = levelUpService.fetchSkillStats(record.getUsername());
+                var s1Opt = com.bobbot.osrs.Skill.findByName(skill1);
+                var s2Opt = com.bobbot.osrs.Skill.findByName(skill2);
+
+                if (s1Opt.isEmpty()) return "I couldn't find the skill '" + skill1 + "'.";
+                if (s2Opt.isEmpty()) return "I couldn't find the skill '" + skill2 + "'.";
+
+                com.bobbot.osrs.Skill skill1Enum = s1Opt.get();
+                com.bobbot.osrs.Skill skill2Enum = s2Opt.get();
+
+                var s1 = stats.stream().filter(s -> s.skill() == skill1Enum).findFirst().orElse(null);
+                var s2 = stats.stream().filter(s -> s.skill() == skill2Enum).findFirst().orElse(null);
+
+                if (s1 == null) return "You are unranked in " + skill1Enum.displayName() + ".";
+                if (s2 == null) return "You are unranked in " + skill2Enum.displayName() + ".";
+
+                int levelDiff = s1.level() - s2.level();
+                long xpDiff = s1.xp() - s2.xp();
+
+                return String.format("Comparison for %s: %s is Level %d (%,d XP), %s is Level %d (%,d XP). Level Diff: %s%d, XP Diff: %s%,d.",
+                        record.getUsername(),
+                        s1.skill().displayName(), s1.level(), s1.xp(),
+                        s2.skill().displayName(), s2.level(), s2.xp(),
+                        (levelDiff > 0 ? "+" : ""), levelDiff,
+                        (xpDiff > 0 ? "+" : ""), xpDiff);
+            } catch (Exception e) {
+                return "Error comparing skills: " + e.getMessage();
+            }
+        }
     }
 
     /**
@@ -426,46 +549,79 @@ public class AiService {
      * @param userId Discord user ID of the sender
      * @param channelId Discord channel ID where the message was sent
      * @param guildId Discord guild ID (optional)
+     * @param referencedContent content of the message being replied to (optional)
      * @return AI response
      */
-    public AiResult generateResponse(String prompt, String userId, String channelId, String guildId) {
+    public AiResult generateResponse(String prompt, String userId, String channelId, String guildId, String referencedContent) {
         BotSettings settings = storage.loadSettings();
         String url = settings.getAiUrl();
         String modelName = settings.getAiModel();
 
         if (url == null || url.isBlank()) {
-            return new AiResult("", "AI URL is not configured. Use /admin ai url to set it up.");
+            return new AiResult("", "AI URL is not configured. Use /admin ai url to set it up.", null);
         }
 
         if (modelName == null || modelName.isBlank()) {
-            return new AiResult("", "AI model is not configured. Use /admin ai model to set it up.");
+            return new AiResult("", "AI model is not configured. Use /admin ai model to set it up.", null);
+        }
+
+        String userName = "unknown user";
+        String userNickname = "none";
+        String guildName = "Direct Message";
+        String channelName = "unknown channel";
+        String osrsUsername = "None";
+
+        if (jda != null) {
+            User user = jda.getUserById(userId);
+            if (user != null) {
+                userName = user.getName();
+            }
+
+            if (guildId != null) {
+                Guild guild = jda.getGuildById(guildId);
+                if (guild != null) {
+                    guildName = guild.getName();
+                    Member member = guild.getMemberById(userId);
+                    if (member != null) {
+                        userNickname = member.getEffectiveName();
+                    }
+                }
+            }
+
+            var channel = jda.getGuildChannelById(channelId);
+            if (channel != null) {
+                channelName = channel.getName();
+            }
+        }
+
+        var playerRecord = storage.loadPlayers().get(userId);
+        if (playerRecord != null) {
+            osrsUsername = playerRecord.getUsername();
         }
 
         String personality = loadPersonality();
-        String systemPrompt = "You are Bob, a seasoned Old School RuneScape (OSRS) veteran and helpful assistant. " +
-                "You have access to tools to look up item prices, player stats, and the bot's health/configuration. " +
-                "GUIDELINES:\n" +
-                "1. If a user asks about their own stats or skills, use 'get_my_stats' or 'get_my_skill'.\n" +
-                "2. If they ask about another player by Discord name or @mention, use 'get_stats_by_discord_name'.\n" +
-                "3. If they ask about a specific OSRS username that is NOT a Discord mention, use 'get_player_stats' or 'get_player_skill'.\n" +
-                "4. If they ask who is winning or about the leaderboard, use 'get_leaderboard'.\n" +
-                "5. If they ask about the bot's health, status, uptime, or power state, use 'get_bot_health'.\n" +
-                "6. If an admin asks to reboot or stop the bot, use 'reboot_bot' or 'stop_bot' respectively.\n" +
-                "7. If they ask about your AI configuration or personality, use 'get_ai_config' or 'get_ai_personality'.\n" +
-                "8. Admins can update your model or URL using 'update_ai_model' or 'update_ai_url'.\n" +
-                "9. Always try to be helpful and accurate, but maintain Bob's personality.\n" +
-                "10. Bob (you) is an AI assistant and does not have an OSRS account. If asked about 'your' level, clarify you don't play but can look them up.\n" +
-                "11. If a tool returns an error (e.g., 'Player not found'), explain it in Bob's voice (e.g., blaming lag or the Wilderness).\n" +
-                "12. IMPORTANT: Do not repeatedly call the same tool with similar or slightly varied parameters if it continues to fail. If you can't find a skill or player after one try, just tell the user you couldn't find it and move on.\n" +
-                "13. Recognize common OSRS slang (like 'pl0x', 'plz', 'gz') and do not mistake them for player names or skills.";
+        String systemPrompt = "You are Bob, a seasoned Old School RuneScape (OSRS) veteran and helpful assistant.\n" +
+                "You have access to tools to look up item prices, player stats, and the bot's health/configuration.\n" +
+                "Always maintain your character and follow the tool usage guidelines.\n\n" +
+                "CONTEXT INFORMATION:\n" +
+                "- Current User: " + userName + " (Nickname: " + userNickname + ")\n" +
+                "- Linked OSRS Name: " + osrsUsername + "\n" +
+                "- Server: " + guildName + "\n" +
+                "- Channel: " + channelName + "\n\n" +
+                "IMPORTANT:\n" +
+                "- DO NOT use tools for simple greetings or general chat.\n" +
+                "- If the user is just saying 'hi', 'how are you', or asking about you (Bob), respond in character without calling any tools.\n" +
+                "- Do not repeat the same tool call if it already failed or returned the same info.";
 
         if (!personality.isEmpty()) {
-            systemPrompt += "\n\nBOB'S PERSONALITY:\n" + personality;
+            systemPrompt += "\n\nCORE GUIDELINES & PERSONALITY:\n" + personality;
         }
 
         try {
             CURRENT_USER_ID.set(userId);
             CURRENT_GUILD_ID.set(guildId);
+            LAST_PAGINATION_ID.remove();
+            TOOL_CALL_MAP.get().clear();
 
             // Lazy initialization of model and proxy
             if (cachedModel == null || assistantProxy == null || !url.equals(lastUrl) || !modelName.equals(lastModelName)) {
@@ -489,7 +645,11 @@ public class AiService {
             }
 
             THINKING_ACCUMULATOR.get().setLength(0);
-            String response = assistantProxy.chat(channelId, systemPrompt, prompt);
+            String effectivePrompt = prompt;
+            if (referencedContent != null && !referencedContent.isBlank()) {
+                effectivePrompt = String.format("(Replying to: \"%s\")\n%s", referencedContent, prompt);
+            }
+            String response = assistantProxy.chat(channelId, systemPrompt, effectivePrompt);
             
             // Extract thinking from accumulator (collected by listener)
             String thinking = THINKING_ACCUMULATOR.get().toString().trim();
@@ -523,29 +683,38 @@ public class AiService {
                 cleanContent = "I'm not sure how to respond to that. (Model returned no content)";
             }
 
-            return new AiResult(thinking, cleanContent);
+            String paginationId = LAST_PAGINATION_ID.get();
+            return new AiResult(thinking, cleanContent, paginationId);
+        } catch (LoopDetectedException e) {
+            LOGGER.warn("Custom loop detection triggered: {}", e.getMessage());
+            return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
         } catch (Exception e) {
             if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
-                return new AiResult("", "I was interrupted while thinking. Blame it on a world dc.");
+                return new AiResult("", "I was interrupted while thinking. Blame it on a world dc.", null);
             }
             
             String message = e.getMessage();
             if (message != null && message.contains("sequential tool executions")) {
                 LOGGER.warn("AI exceeded tool execution limit: {}", message);
-                return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.");
+                return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
             }
 
             LOGGER.error("AI generation failed with LangChain4j", e);
-            return new AiResult("", "I'm sorry, but something went wrong while I was thinking: " + e.getMessage());
+            return new AiResult("", "I'm sorry, but something went wrong while I was thinking: " + e.getMessage(), null);
         } finally {
             CURRENT_USER_ID.remove();
             CURRENT_GUILD_ID.remove();
+            LAST_PAGINATION_ID.remove();
         }
     }
 
     private String buildBaseUrl(String url) {
-        String base = url;
+        String base = url.trim();
+        if (!base.startsWith("http://") && !base.startsWith("https://")) {
+            LOGGER.info("AI URL '{}' missing scheme, prepending http://", base);
+            base = "http://" + base;
+        }
         if (base.endsWith("/v1/chat/completions")) {
             base = base.substring(0, base.length() - "/chat/completions".length());
         } else if (base.endsWith("/v1/")) {

@@ -1,10 +1,12 @@
 package com.bobbot.service;
 
+import com.bobbot.discord.DiscordFormatUtils;
 import com.bobbot.osrs.Skill;
 import com.bobbot.osrs.SkillStat;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.storage.PlayerRecord;
+import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 
@@ -66,21 +68,20 @@ public class LeaderboardService {
         Instant weekStart = startOfWeek(now);
         Map<String, PlayerRecord> updatedPlayers = ensureWeeklySnapshots(players, weekStart);
 
-        StringBuilder builder = new StringBuilder();
-        builder.append("🏆 ").append(scheduled ? "Scheduled" : "Manual").append(" Leaderboard\n\n");
-        builder.append(skillEmoji(skill)).append(" Skill Leaderboard — ").append(skill.displayName()).append("\n");
+        EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
+                .setTitle("🏆 " + (scheduled ? "Scheduled" : "Manual") + " Leaderboard")
+                .setDescription("Current OSRS rankings for linked players.");
+
+        StringBuilder skillLbBuilder = new StringBuilder();
         List<PlayerEntry> skillEntries = buildSkillEntries(updatedPlayers, skillStats);
         int rank = 1;
         for (PlayerEntry entry : skillEntries) {
-            builder.append(rank++)
-                    .append(". ")
-                    .append(formatLeaderboardName(entry.discordUserId(), entry.record().getUsername()))
-                    .append(" — lvl ")
-                    .append(entry.skillLevel())
-                    .append("\n");
+            skillLbBuilder.append(String.format("`%d.` %s — lvl **%d**\n",
+                    rank++, formatLeaderboardName(entry.discordUserId(), entry.record().getUsername()), entry.skillLevel()));
         }
+        eb.addField(skillEmoji(skill) + " " + skill.displayName() + " Rankings", skillLbBuilder.toString(), false);
 
-        builder.append("\n🏆 Overall Leaderboard — total | Δ since last | 📈 this week\n");
+        StringBuilder overallBuilder = new StringBuilder();
         List<PlayerEntry> overallEntries = buildOverallEntries(updatedPlayers);
         rank = 1;
         for (PlayerEntry entry : overallEntries) {
@@ -90,18 +91,13 @@ public class LeaderboardService {
             int weeklySnapshot = Optional.ofNullable(record.getLastWeeklySnapshotTotalLevel()).orElse(totalLevel);
             int delta = totalLevel - snapshotLevel;
             int weeklyDelta = totalLevel - weeklySnapshot;
-            builder.append(rank++)
-                    .append(". ")
-                    .append(formatLeaderboardName(entry.discordUserId(), record.getUsername()))
-                    .append(" — ")
-                    .append(totalLevel)
-                    .append(" | ")
-                    .append(formatDelta(delta))
-                    .append(" | ")
-                    .append(formatDelta(weeklyDelta))
-                    .append("\n");
+
+            overallBuilder.append(String.format("`%d.` %s — **%d** (%s | %s)\n",
+                    rank++, formatLeaderboardName(entry.discordUserId(), record.getUsername()), totalLevel, formatDelta(delta), formatDelta(weeklyDelta)));
         }
-        channel.sendMessage(builder.toString()).queue();
+        eb.addField("🏆 Overall Leaderboard", "*Format: Rank. Name — Total (Δ Last | Δ Week)*\n" + overallBuilder.toString(), false);
+
+        channel.sendMessageEmbeds(eb.build()).queue();
         Instant snapshotTime = Instant.now();
         storage.saveSettings(settings.withLastLeaderboardTimestamp(snapshotTime));
         levelUpService.recordLeaderboardSnapshot();

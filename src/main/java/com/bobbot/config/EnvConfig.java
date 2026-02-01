@@ -36,7 +36,9 @@ public record EnvConfig(
      * @return configured EnvConfig
      */
     public static EnvConfig load() {
-        Map<String, String> env = System.getenv();
+        java.util.Map<String, String> env = new java.util.HashMap<>(System.getenv());
+        loadEnvFile(env);
+        
         Optional<ResolvedEnv> tokenEnv = firstEnv(env, "discord-token", "discord_token", "DISCORD_TOKEN");
         String token = tokenEnv.map(ResolvedEnv::value).orElse("");
         String superuser = firstEnvValue(env, "discord-superuser-id", "discord_superuser_id", "DISCORD_SUPERUSER_ID")
@@ -45,7 +47,7 @@ public record EnvConfig(
         Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
         int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT", "PORT");
-        String environment = firstEnvValue(env, "ENVIRONMENT", "environment").orElse("");
+        String environment = detectEnvironment(env);
         EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort, environment);
         if (!config.hasDiscordToken()) {
             LOGGER.error("Discord token missing. Set discord-token, discord_token, or DISCORD_TOKEN to start the bot.");
@@ -86,6 +88,62 @@ public record EnvConfig(
 
     private static Optional<String> firstEnvValue(Map<String, String> env, String... keys) {
         return firstEnv(env, keys).map(ResolvedEnv::value);
+    }
+
+    private static void loadEnvFile(Map<String, String> env) {
+        Path path = Path.of(".env");
+        if (java.nio.file.Files.exists(path)) {
+            try {
+                java.util.List<String> lines = java.nio.file.Files.readAllLines(path);
+                for (String line : lines) {
+                    line = line.trim();
+                    if (line.isEmpty() || line.startsWith("#")) {
+                        continue;
+                    }
+                    int sep = line.indexOf('=');
+                    if (sep > 0) {
+                        String key = line.substring(0, sep).trim();
+                        String value = line.substring(sep + 1).trim();
+                        // Only set if not already present in environment
+                        env.putIfAbsent(key, value);
+                        // Also try lowercase variants for internal compatibility
+                        env.putIfAbsent(key.toLowerCase(Locale.ROOT).replace("_", "-"), value);
+                    }
+                }
+            } catch (java.io.IOException e) {
+                LOGGER.warn("Failed to read .env file", e);
+            }
+        }
+    }
+
+    private static String detectEnvironment(Map<String, String> env) {
+        String explicit = firstEnvValue(env, "ENVIRONMENT", "environment").orElse("");
+        if (!explicit.isBlank()) {
+            return explicit;
+        }
+
+        // Check for Docker
+        if (java.nio.file.Files.exists(java.nio.file.Path.of("/.dockerenv")) || env.containsKey("DOCKER_CONTAINER")) {
+            return "Docker";
+        }
+
+        // Check for Kubernetes
+        if (env.containsKey("KUBERNETES_SERVICE_HOST")) {
+            return "Kubernetes";
+        }
+
+        // Check for IntelliJ
+        if (env.containsKey("INTELLIJ_IDEA_RUN_CONF") || env.containsKey("IDE_PROJECT_ROOT")) {
+            return "IntelliJ";
+        }
+
+        // Default to Local if running on personal machine (heuristic)
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win") || os.contains("mac")) {
+            return "Local";
+        }
+
+        return "";
     }
 
     /**

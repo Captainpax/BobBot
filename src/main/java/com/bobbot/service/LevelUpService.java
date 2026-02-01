@@ -1,11 +1,13 @@
 package com.bobbot.service;
 
 import com.bobbot.config.EnvConfig;
+import com.bobbot.discord.DiscordFormatUtils;
 import com.bobbot.osrs.HiscoreClient;
 import com.bobbot.osrs.SkillStat;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.storage.PlayerRecord;
+import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import org.slf4j.Logger;
@@ -99,17 +101,18 @@ public class LevelUpService {
                     int gained = overall.level() - record.getLastTotalLevel();
                     updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));
 
-                    String message = String.format("%s leveled up! +%d total levels (now %d).",
-                            record.getUsername(), gained, overall.level());
+                    EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
+                            .setTitle("🎉 Level Up!")
+                            .setDescription(String.format("**%s** gained **+%d** total levels!", record.getUsername(), gained))
+                            .addField("New Total Level", String.valueOf(overall.level()), true);
 
                     if (leaderboardChannel != null) {
-                        leaderboardChannel.sendMessage(message).queue();
+                        leaderboardChannel.sendMessageEmbeds(eb.build()).queue();
                     }
 
                     if (bobsChatChannel != null) {
-                        String pingMessage = String.format("<@%s> you leveled up! %s is now total level %d (+%d).",
-                                discordUserId, record.getUsername(), overall.level(), gained);
-                        bobsChatChannel.sendMessage(pingMessage).queue();
+                        String pingContent = String.format("<@%s> GZ on the level up!", discordUserId);
+                        bobsChatChannel.sendMessage(pingContent).setEmbeds(eb.build()).queue();
                     }
                 } else if (overall.xp() > record.getLastTotalXp()) {
                     updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));

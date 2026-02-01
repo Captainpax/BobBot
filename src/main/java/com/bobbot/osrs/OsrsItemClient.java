@@ -12,7 +12,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -24,6 +26,26 @@ public class OsrsItemClient {
     private static final String LATEST_URL = "https://prices.runescape.wiki/api/v1/osrs/latest?id=";
     private static final String USER_AGENT = "BobBot OSRS Price Lookup - @yourdiscord";
 
+    private static final Map<String, String> ALIASES = Map.ofEntries(
+        Map.entry("tbow", "twisted bow"),
+        Map.entry("shadow", "tumeken's shadow (uncharged)"),
+        Map.entry("scythe", "scythe of vitur (uncharged)"),
+        Map.entry("fang", "osmumten's fang"),
+        Map.entry("bcp", "bandos chestplate"),
+        Map.entry("tassets", "bandos tassets"),
+        Map.entry("dfs", "dragonfire shield"),
+        Map.entry("zcb", "zaryte crossbow"),
+        Map.entry("bp", "toxic blowpipe (empty)"),
+        Map.entry("blowpipe", "toxic blowpipe (empty)"),
+        Map.entry("ags", "armadyl godsword"),
+        Map.entry("sgs", "saradomin godsword"),
+        Map.entry("bgs", "bandos godsword"),
+        Map.entry("zgs", "zamorak godsword"),
+        Map.entry("dwh", "dragon warhammer"),
+        Map.entry("claws", "dragon claws"),
+        Map.entry("bond", "old school bond")
+    );
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
     private List<ItemMapping> mappingCache = null;
@@ -34,18 +56,28 @@ public class OsrsItemClient {
     public record ItemPrice(Long high, Long low) {}
 
     /**
-     * Find an item by name (case-insensitive).
+     * Find an item by name (case-insensitive) or alias.
      *
-     * @param name item name
+     * @param name item name or alias
      * @return optional item mapping
      * @throws IOException on API failures
      * @throws InterruptedException on interrupted requests
      */
     public Optional<ItemMapping> findItem(String name) throws IOException, InterruptedException {
         ensureMappingLoaded();
-        return mappingCache.stream()
-                .filter(item -> item.name().equalsIgnoreCase(name))
+        String query = ALIASES.getOrDefault(name.toLowerCase(), name);
+        
+        // Exact match
+        Optional<ItemMapping> exact = mappingCache.stream()
+                .filter(item -> item.name().equalsIgnoreCase(query))
                 .findFirst();
+        
+        if (exact.isPresent()) return exact;
+
+        // Best start-of-string match
+        return mappingCache.stream()
+                .filter(item -> item.name().toLowerCase().startsWith(query.toLowerCase()))
+                .min(Comparator.comparingInt(item -> item.name().length()));
     }
 
     /**
@@ -62,6 +94,7 @@ public class OsrsItemClient {
         String lowerQuery = query.toLowerCase();
         return mappingCache.stream()
                 .filter(item -> item.name().toLowerCase().contains(lowerQuery))
+                .sorted(Comparator.comparingInt(item -> item.name().length()))
                 .limit(limit)
                 .toList();
     }

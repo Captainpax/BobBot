@@ -13,6 +13,7 @@ import com.bobbot.service.ConfigService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
+import com.bobbot.service.PaginationService;
 import com.bobbot.service.PriceService;
 import com.bobbot.service.RoleService;
 import com.bobbot.storage.JsonStorage;
@@ -58,8 +59,9 @@ public class BotApp {
         PriceService priceService = new PriceService();
         RoleService roleService = new RoleService();
         ConfigService configService = new ConfigService();
+        PaginationService paginationService = new PaginationService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
-        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService);
+        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
 
@@ -79,10 +81,10 @@ public class BotApp {
                     .setActivity(Activity.playing("OSRS levels"))
                     .setEventPool(eventPool)
                     .addEventListeners(
-                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService),
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService, paginationService),
                             new ReadyNotificationListener(envConfig, healthService),
                             new MentionHealthListener(healthService),
-                            new AiMessageListener(storage, aiService, healthService),
+                            new AiMessageListener(storage, aiService, healthService, paginationService),
                             new RoleListener(roleService, healthService, storage, envConfig)
                     )
                     .build()
@@ -123,6 +125,19 @@ public class BotApp {
                                                 .addOptions(skillOption),
                                         new SubcommandData("pricelookup", "Look up the current G.E. price of an item")
                                                 .addOption(OptionType.STRING, "item", "The name of the item", true)
+                                )
+                                .addSubcommandGroups(
+                                        new SubcommandGroupData("compare", "Compare items or skills")
+                                                .addSubcommands(
+                                                        new SubcommandData("price", "Compare prices of two items")
+                                                                .addOption(OptionType.STRING, "item1", "First item name", true)
+                                                                .addOption(OptionType.STRING, "item2", "Second item name", true),
+                                                        new SubcommandData("level", "Compare two of your skills")
+                                                                .addOptions(
+                                                                        new OptionData(OptionType.STRING, "skill1", "First skill", true, true),
+                                                                        new OptionData(OptionType.STRING, "skill2", "Second skill", true, true)
+                                                                )
+                                                )
                                 ),
                         Commands.slash("admin", "Administrative commands")
                                 .addSubcommandGroups(

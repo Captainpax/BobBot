@@ -9,12 +9,15 @@ import com.bobbot.service.ConfigService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
+import com.bobbot.service.PaginationService;
 import com.bobbot.service.PriceService;
 import com.bobbot.service.RoleService;
 import com.bobbot.storage.PlayerRecord;
 import com.bobbot.util.FormatUtils;
+import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
@@ -43,7 +46,6 @@ import java.util.stream.Collectors;
  */
 public class SlashCommandListener extends ListenerAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlashCommandListener.class);
-    private static final int DISCORD_MESSAGE_LIMIT = 1800;
     private final EnvConfig envConfig;
     private final LeaderboardService leaderboardService;
     private final LevelUpService levelUpService;
@@ -52,6 +54,7 @@ public class SlashCommandListener extends ListenerAdapter {
     private final AiService aiService;
     private final RoleService roleService;
     private final ConfigService configService;
+    private final PaginationService paginationService;
 
     /**
      * Create a new listener with dependencies.
@@ -64,6 +67,7 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param aiService AI service
      * @param roleService role service
      * @param configService config service
+     * @param paginationService pagination service
      */
     public SlashCommandListener(EnvConfig envConfig,
                                 LeaderboardService leaderboardService,
@@ -72,7 +76,8 @@ public class SlashCommandListener extends ListenerAdapter {
                                 PriceService priceService,
                                 AiService aiService,
                                 RoleService roleService,
-                                ConfigService configService) {
+                                ConfigService configService,
+                                PaginationService paginationService) {
         this.envConfig = envConfig;
         this.leaderboardService = leaderboardService;
         this.levelUpService = levelUpService;
@@ -81,11 +86,13 @@ public class SlashCommandListener extends ListenerAdapter {
         this.aiService = aiService;
         this.roleService = roleService;
         this.configService = configService;
+        this.paginationService = paginationService;
     }
 
     @Override
     public void onCommandAutoCompleteInteraction(CommandAutoCompleteInteractionEvent event) {
-        if ("skill".equals(event.getFocusedOption().getName())) {
+        String optionName = event.getFocusedOption().getName();
+        if ("skill".equals(optionName) || "skill1".equals(optionName) || "skill2".equals(optionName)) {
             String input = event.getFocusedOption().getValue().toLowerCase(Locale.ROOT);
             List<Command.Choice> options = Arrays.stream(Skill.values())
                     .filter(skill -> skill.displayName().toLowerCase(Locale.ROOT).startsWith(input)
@@ -123,6 +130,17 @@ public class SlashCommandListener extends ListenerAdapter {
         String group = event.getSubcommandGroup();
         try {
             if ("os".equals(name)) {
+                if ("compare".equals(group)) {
+                    switch (subcommand != null ? subcommand : "") {
+                        case "price" -> handleComparePrice(event);
+                        case "level" -> handleCompareLevel(event);
+                        default -> {
+                            LOGGER.debug("Unknown compare subcommand '{}'", subcommand);
+                            event.reply("Unknown subcommand.").setEphemeral(true).queue();
+                        }
+                    }
+                    return;
+                }
                 switch (subcommand != null ? subcommand : "") {
                     case "link" -> handleLink(event);
                     case "unlink" -> handleUnlink(event);
@@ -182,7 +200,13 @@ public class SlashCommandListener extends ListenerAdapter {
         JDA jda = event.getJDA();
         if (target.equals("discord")) {
             String inviteUrl = jda.getInviteUrl(Permission.MESSAGE_SEND, Permission.MESSAGE_EMBED_LINKS, Permission.MESSAGE_HISTORY);
-            event.reply("Use this invite link to add the bot to a server (requested guild: " + targetId + "): " + inviteUrl)
+            MessageEmbed embed = DiscordFormatUtils.createBobEmbed(jda)
+                    .setTitle("📩 Bot Invite")
+                    .setDescription("Use the link below to add BobBot to your server.")
+                    .addField("Invite Link", "[Click Here to Invite](" + inviteUrl + ")", false)
+                    .addField("Requested Guild ID", "`" + targetId + "`", false)
+                    .build();
+            event.replyEmbeds(embed)
                     .setEphemeral(true)
                     .queue();
             return;
@@ -302,45 +326,27 @@ public class SlashCommandListener extends ListenerAdapter {
             }
             List<SkillStat> stats = levelUpService.fetchSkillStats(record.getUsername());
 
-            StringBuilder builder = new StringBuilder();
-            builder.append("Stats for ").append(record.getUsername()).append(":\n");
-            Instant lastLeaderboardTimestamp = leaderboardService.getLastLeaderboardTimestamp();
-            Integer lastLeaderboardTotal = record.getLastLeaderboardTotalLevel();
-            List<String> messages = new ArrayList<>();
-            StringBuilder current = new StringBuilder(builder);
+            EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                    .setAuthor("Stats for " + record.getUsername(), null, event.getUser().getEffectiveAvatarUrl());
 
             if (skillFilter.equals("all")) {
-                List<String> totalsRows = new ArrayList<>();
-                totalsRows.add(String.format("| ⭐ Total Level | %d |", record.getLastTotalLevel()));
-                if (lastLeaderboardTimestamp != null && lastLeaderboardTotal != null) {
-                    int gained = record.getLastTotalLevel() - lastLeaderboardTotal;
-                    String timestamp = "<t:" + lastLeaderboardTimestamp.getEpochSecond() + ":F>";
-                    totalsRows.add(String.format("| ⬆️ Levels Gained (since %s) | %+d |", timestamp, gained));
+                eb.setTitle("📊 OSRS Stats Summary");
+                eb.addField("⭐ Total Level", String.valueOf(record.getLastTotalLevel()), true);
+
+                Instant lastLbTs = leaderboardService.getLastLeaderboardTimestamp();
+                Integer lastLbTotal = record.getLastLeaderboardTotalLevel();
+                if (lastLbTs != null && lastLbTotal != null) {
+                    int gained = record.getLastTotalLevel() - lastLbTotal;
+                    eb.addField("⬆️ Gained", String.format("`%+d` levels", gained), true);
                 } else {
-                    totalsRows.add("| ⬆️ Levels Gained (since last leaderboard) | — |");
+                    eb.addField("⬆️ Gained", "`--`", true);
                 }
-                current = DiscordFormatUtils.appendTableSection(messages,
-                        current,
-                        "📊 **Totals**",
-                        "| 📊 Stat | ⭐ Value |",
-                        "|:--|--:|",
-                        totalsRows,
-                        false);
-                if (!stats.isEmpty()) {
-                    List<String> skillRows = new ArrayList<>();
-                    for (SkillStat stat : stats) {
-                        if (stat.skill().isOverall()) {
-                            continue;
-                        }
-                        skillRows.add(formatSkillRow(stat));
-                    }
-                    current = DiscordFormatUtils.appendTableSection(messages,
-                            current,
-                            "📊 **Skills**",
-                            "| ⭐ Skill | ⬆️ Level | 📈 XP to Next |",
-                            "|:--|--:|--:|",
-                            skillRows,
-                            true);
+                eb.addBlankField(true);
+
+                for (SkillStat stat : stats) {
+                    if (stat.skill().isOverall()) continue;
+                    String levelStr = stat.level() < 1 ? "unranked" : String.format("Level %d", stat.level());
+                    eb.addField(stat.skill().displayName(), levelStr, true);
                 }
             } else {
                 final String filter = skillFilter;
@@ -356,26 +362,22 @@ public class SlashCommandListener extends ListenerAdapter {
                     return;
                 }
 
-                List<String> skillRows = new ArrayList<>();
-                skillRows.add(formatSkillRow(targetStat));
-                current = DiscordFormatUtils.appendTableSection(messages,
-                        current,
-                        "📊 **Skill: " + targetStat.skill().displayName() + "**",
-                        "| ⭐ Skill | ⬆️ Level | 📈 XP to Next |",
-                        "|:--|--:|--:|",
-                        skillRows,
-                        true);
-            }
-            messages.add(current.toString());
+                eb.setTitle("📊 Skill: " + targetStat.skill().displayName());
+                eb.addField("Level", String.valueOf(targetStat.level()), true);
+                eb.addField("Experience", String.format("%,d XP", targetStat.xp()), true);
 
-            for (int i = 0; i < messages.size(); i++) {
-                String message = messages.get(i);
-                var action = event.getHook().sendMessage(message);
-                if (ephemeral && i == messages.size() - 1) {
-                    action.addComponents(ActionRow.of(Button.primary("share:stats:" + userId + ":" + skillFilter, "Show to all")));
+                if (targetStat.level() < 99 && targetStat.level() > 0) {
+                    long xpToNext = OsrsXpTable.xpToNextLevel(targetStat.level(), targetStat.xp());
+                    eb.addField("Next Level In", String.format("%,d XP", xpToNext), true);
                 }
-                action.queue();
             }
+
+            var action = event.getHook().sendMessageEmbeds(eb.build());
+            if (ephemeral) {
+                action.addComponents(ActionRow.of(Button.primary("share:stats:" + userId + ":" + skillFilter, "Show to all")));
+            }
+            action.queue();
+
         } catch (IOException | InterruptedException e) {
             LOGGER.error("Failed to fetch stats for user {}", userId, e);
             if (ephemeral) {
@@ -408,18 +410,117 @@ public class SlashCommandListener extends ListenerAdapter {
                 return;
             }
 
-            StringBuilder builder = new StringBuilder();
-            builder.append("💰 **G.E. Price: ").append(info.itemName()).append("**\n");
-            if (info.price().high() != null) {
-                builder.append("- High: `").append(formatGp(info.price().high())).append("`\n");
-            }
-            if (info.price().low() != null) {
-                builder.append("- Low: `").append(formatGp(info.price().low())).append("`\n");
-            }
-            event.getHook().sendMessage(builder.toString()).queue();
+            MessageEmbed embed = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                    .setTitle("💰 G.E. Price: " + info.itemName())
+                    .addField("High Price", info.price().high() != null ? "`" + formatGp(info.price().high()) + "`" : "`unknown`", true)
+                    .addField("Low Price", info.price().low() != null ? "`" + formatGp(info.price().low()) + "`" : "`unknown`", true)
+                    .build();
+
+            event.getHook().sendMessageEmbeds(embed).queue();
         } catch (IOException | InterruptedException e) {
             LOGGER.error("Price lookup failed for query '{}'", itemQuery, e);
             event.getHook().sendMessage("Failed to fetch price data. Please try again later.").queue();
+        }
+    }
+
+    private void handleComparePrice(SlashCommandInteractionEvent event) {
+        String item1 = getRequiredOption(event, "item1");
+        String item2 = getRequiredOption(event, "item2");
+        if (item1 == null || item2 == null) return;
+
+        event.deferReply().queue();
+        try {
+            Optional<PriceService.PriceInfo> info1Opt = priceService.lookupPrice(item1);
+            Optional<PriceService.PriceInfo> info2Opt = priceService.lookupPrice(item2);
+
+            if (info1Opt.isEmpty()) {
+                event.getHook().sendMessage("Item '" + item1 + "' not found.").queue();
+                return;
+            }
+            if (info2Opt.isEmpty()) {
+                event.getHook().sendMessage("Item '" + item2 + "' not found.").queue();
+                return;
+            }
+
+            PriceService.PriceInfo info1 = info1Opt.get();
+            PriceService.PriceInfo info2 = info2Opt.get();
+
+            if (info1.price() == null || info2.price() == null) {
+                event.getHook().sendMessage("Price data is missing for one of the items.").queue();
+                return;
+            }
+
+            long price1 = info1.price().high() != null ? info1.price().high() : info1.price().low();
+            long price2 = info2.price().high() != null ? info2.price().high() : info2.price().low();
+
+            long diff = price1 - price2;
+            String diffStr = diff > 0 ? String.format("+%,d GP", diff) : String.format("%,d GP", diff);
+
+            MessageEmbed embed = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                    .setTitle("⚖️ Price Comparison")
+                    .addField(info1.itemName(), formatGp(price1), true)
+                    .addField(info2.itemName(), formatGp(price2), true)
+                    .addField("Difference", "`" + diffStr + "`", false)
+                    .build();
+
+            event.getHook().sendMessageEmbeds(embed).queue();
+        } catch (Exception e) {
+            LOGGER.error("Price comparison failed", e);
+            event.getHook().sendMessage("Failed to compare prices. Try again later.").queue();
+        }
+    }
+
+    private void handleCompareLevel(SlashCommandInteractionEvent event) {
+        String skill1Str = getRequiredOption(event, "skill1");
+        String skill2Str = getRequiredOption(event, "skill2");
+        if (skill1Str == null || skill2Str == null) return;
+
+        event.deferReply(true).queue();
+        try {
+            PlayerRecord record = levelUpService.refreshPlayer(event.getUser().getId());
+            if (record == null) {
+                event.getHook().sendMessage("You haven't linked your OSRS account yet. Use /os link to get started.").queue();
+                return;
+            }
+
+            List<SkillStat> stats = levelUpService.fetchSkillStats(record.getUsername());
+
+            Optional<Skill> skill1Opt = Skill.findByName(skill1Str);
+            Optional<Skill> skill2Opt = Skill.findByName(skill2Str);
+
+            if (skill1Opt.isEmpty() || skill2Opt.isEmpty()) {
+                event.getHook().sendMessage("Could not find one of the skills specified.").queue();
+                return;
+            }
+
+            Skill skill1 = skill1Opt.get();
+            Skill skill2 = skill2Opt.get();
+
+            SkillStat s1 = stats.stream().filter(s -> s.skill() == skill1).findFirst().orElse(null);
+            SkillStat s2 = stats.stream().filter(s -> s.skill() == skill2).findFirst().orElse(null);
+
+            if (s1 == null || s2 == null) {
+                event.getHook().sendMessage("Skill data missing for one of the skills (likely unranked).").queue();
+                return;
+            }
+
+            int levelDiff = s1.level() - s2.level();
+            long xpDiff = s1.xp() - s2.xp();
+
+            String levelDiffStr = levelDiff > 0 ? "+" + levelDiff : String.valueOf(levelDiff);
+            String xpDiffStr = xpDiff > 0 ? String.format("+%,d", xpDiff) : String.format("%,d", xpDiff);
+
+            MessageEmbed embed = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                    .setTitle("⚖️ Skill Comparison for " + record.getUsername())
+                    .addField(s1.skill().displayName(), String.format("Level %d\n(%,d XP)", s1.level(), s1.xp()), true)
+                    .addField(s2.skill().displayName(), String.format("Level %d\n(%,d XP)", s2.level(), s2.xp()), true)
+                    .addField("Differences", String.format("**Level:** `%s`\n**XP:** `%s`", levelDiffStr, xpDiffStr), false)
+                    .build();
+
+            event.getHook().sendMessageEmbeds(embed).queue();
+        } catch (Exception e) {
+            LOGGER.error("Skill comparison failed", e);
+            event.getHook().sendMessage("Failed to compare skills. Try again later.").queue();
         }
     }
 
@@ -518,13 +619,16 @@ public class SlashCommandListener extends ListenerAdapter {
             CompletableFuture.runAsync(() -> {
                 try {
                     String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
-                    AiService.AiResult result = aiService.generateResponse(finalPrompt, event.getUser().getId(), event.getChannel().getId(), guildId);
-                    
-                    String response = "**Prompt:** " + finalPrompt + "\n**AI Response:** " + result.content();
-                    if (response.length() > 1990) {
-                        response = response.substring(0, 1987) + "...";
-                    }
-                    hook.editOriginal(response).queue();
+                    AiService.AiResult result = aiService.generateResponse(finalPrompt, event.getUser().getId(), event.getChannel().getId(), guildId, null);
+
+                    EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                            .setTitle("🤖 AI Test Result")
+                            .addField("Prompt", finalPrompt, false)
+                            .addField("Response", result.content(), false);
+
+                    hook.editOriginal(event.getUser().getAsMention()).setEmbeds(eb.build()).queue(sentMsg -> {
+                        healthService.cacheThought(sentMsg.getId(), finalPrompt, result.thinking(), event.getUser().getId());
+                    });
 
                     if (!result.thinking().isBlank()) {
                         healthService.sendThinkingLog(event.getJDA(), event.getUser(), finalPrompt, result.thinking());
@@ -583,56 +687,11 @@ public class SlashCommandListener extends ListenerAdapter {
      */
     private void handleHealth(SlashCommandInteractionEvent event) {
         event.deferReply().queue();
-        HealthService.HealthData data = healthService.getHealthData(event.getJDA());
-        List<String> messages = new ArrayList<>();
-        StringBuilder current = new StringBuilder("BobBot Health Report:\n");
-
-        // Section: Instance
-        List<String> instanceRows = new ArrayList<>();
-        instanceRows.add(String.format("| Environment | %s |", data.environment() == null ? "not set" : data.environment()));
-        instanceRows.add(String.format("| Status | %s |", data.botStatus()));
-        instanceRows.add(String.format("| Uptime | %s |", FormatUtils.formatDuration(data.uptime())));
-        current = DiscordFormatUtils.appendTableSection(messages, current, "🤖 **Instance**",
-                "| Property | Value |", "|:--|--:|", instanceRows, false);
-
-        // Section: Connectivity
-        List<String> connRows = new ArrayList<>();
-        connRows.add(String.format("| Discord | %s | %dms |", data.discordStatus(), data.discordPing()));
-        connRows.add(String.format("| Gateway | — | %dms |", data.discordPing()));
-        connRows.add(String.format("| OSRS | %s | %dms |", data.osrsStatus(), data.osrsPing()));
-        current = DiscordFormatUtils.appendTableSection(messages, current, "🌐 **Connectivity**",
-                "| Service | Status | Ping |", "|:--|:--|--:|", connRows, false);
-
-        // Section: Statistics
-        List<String> statsRows = new ArrayList<>();
-        statsRows.add(String.format("| Guilds | %d |", data.guildCount()));
-        statsRows.add(String.format("| Linked Players | %d |", data.playerCount()));
-        statsRows.add(String.format("| Additional Admins | %d |", data.adminCount()));
-        statsRows.add(String.format("| Top XP User | %s |", data.topXpUser()));
-        current = DiscordFormatUtils.appendTableSection(messages, current, "📊 **Statistics**",
-                "| Metric | Value |", "|:--|--:|", statsRows, false);
-
-        // Section: Configuration
-        List<String> configRows = new ArrayList<>();
-        configRows.add(String.format("| Leaderboard Ch | %s |", data.leaderboardChannelId() == null ? "not set" : data.leaderboardChannelId()));
-        configRows.add(String.format("| Bob's Chat Ch | %s |", data.bobsChatChannelId() == null ? "not set" : data.bobsChatChannelId()));
-        configRows.add(String.format("| Scheduled Lb | %s |", data.scheduledLeaderboard()));
-        configRows.add(String.format("| Lb Interval | %s |", data.leaderboardInterval()));
-        configRows.add(String.format("| Poll Interval | %s |", data.pollInterval()));
-        current = DiscordFormatUtils.appendTableSection(messages, current, "⚙️ **Configuration**",
-                "| Setting | Value |", "|:--|--:|", configRows, false);
-
-        // Section: AI
-        List<String> aiRows = new ArrayList<>();
-        aiRows.add(String.format("| URL | %s |", data.aiUrl() == null ? "not set" : data.aiUrl()));
-        aiRows.add(String.format("| Model | %s |", data.aiModel() == null ? "not set" : data.aiModel()));
-        current = DiscordFormatUtils.appendTableSection(messages, current, "🤖 **AI**",
-                "| Setting | Value |", "|:--|--:|", aiRows, false);
-
-        messages.add(current.toString());
-        for (String message : messages) {
-            event.getHook().sendMessage(message).queue();
-        }
+        String activeTab = "instance";
+        MessageEmbed embed = healthService.buildHealthEmbed(event.getJDA(), activeTab);
+        event.getHook().sendMessageEmbeds(embed)
+                .setComponents(getHealthButtons(activeTab))
+                .queue();
     }
 
     /**
@@ -729,6 +788,17 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
+
+    private ActionRow getHealthButtons(String activeTab) {
+        return ActionRow.of(
+                Button.primary("health:tab:instance", "Instance").withDisabled("instance".equals(activeTab)),
+                Button.primary("health:tab:connectivity", "Connectivity").withDisabled("connectivity".equals(activeTab)),
+                Button.primary("health:tab:statistics", "Statistics").withDisabled("statistics".equals(activeTab)),
+                Button.primary("health:tab:configuration", "Configuration").withDisabled("configuration".equals(activeTab)),
+                Button.primary("health:tab:ai", "AI").withDisabled("ai".equals(activeTab))
+        );
+    }
+
     private void shutdown(JDA jda, String action, int exitCode) {
         LOGGER.info("Power action '{}' requested. Shutting down JDA with exit code {}", action, exitCode);
         jda.shutdown();
@@ -761,17 +831,6 @@ public class SlashCommandListener extends ListenerAdapter {
                 event.getName(), event.getUser().getId(), guildId);
     }
 
-    private String formatSkillRow(SkillStat stat) {
-        if (stat.level() < 1) {
-            return String.format("| %s | unranked | — |", stat.skill().displayName());
-        }
-        long xpToNext = OsrsXpTable.xpToNextLevel(stat.level(), stat.xp());
-        return String.format(Locale.US, "| %s | %d | %,d |",
-                stat.skill().displayName(),
-                stat.level(),
-                xpToNext);
-    }
-
     @Override
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
@@ -783,7 +842,51 @@ public class SlashCommandListener extends ListenerAdapter {
                 event.deferReply().queue();
                 sendStats(event, userId, skillFilter, false);
             }
+        } else if (componentId.startsWith("health:tab:")) {
+            String tab = componentId.substring("health:tab:".length());
+            MessageEmbed embed = healthService.buildHealthEmbed(event.getJDA(), tab);
+            event.editMessageEmbeds(embed)
+                    .setComponents(getHealthButtons(tab))
+                    .queue();
+        } else if (componentId.startsWith("ai:page:")) {
+            handleAiPageButton(event);
         }
+    }
+
+    private void handleAiPageButton(ButtonInteractionEvent event) {
+        String componentId = event.getComponentId();
+        String[] parts = componentId.split(":");
+        if (parts.length < 4) return;
+
+        String action = parts[2];
+        String sessionId = parts[3];
+
+        PaginationService.PagedSession session = paginationService.getSession(sessionId);
+        if (session == null) {
+            event.reply("This pagination session has expired, mate. Try asking me again.").setEphemeral(true).queue();
+            return;
+        }
+
+        int newPage = session.currentPage();
+        if ("next".equals(action)) {
+            newPage++;
+        } else if ("prev".equals(action)) {
+            newPage--;
+        }
+
+        if (newPage < 0 || newPage >= session.pages().size()) {
+            event.deferEdit().queue();
+            return;
+        }
+
+        paginationService.updateSessionPage(sessionId, newPage);
+        PaginationService.PagedSession updatedSession = paginationService.getSession(sessionId);
+
+        MessageEmbed newEmbed = AiMessageListener.createPaginationEmbed(event.getJDA(), updatedSession.naturalResponse(), updatedSession);
+
+        event.editMessageEmbeds(newEmbed)
+                .setComponents(AiMessageListener.createPaginationButtons(sessionId, updatedSession))
+                .queue();
     }
 
 }

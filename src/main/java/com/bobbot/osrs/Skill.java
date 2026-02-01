@@ -67,4 +67,46 @@ public enum Skill {
     public static List<Skill> ordered() {
         return ORDERED;
     }
+
+    /**
+     * Find a skill by name, display name, or common alias.
+     *
+     * @param name skill name or alias
+     * @return optional skill
+     */
+    public static java.util.Optional<Skill> findByName(String name) {
+        if (name == null || name.isBlank()) return java.util.Optional.empty();
+        String n = name.toLowerCase().trim();
+
+        // Aliases
+        switch (n) {
+            case "wc" -> n = "woodcutting";
+            case "rc" -> n = "runecraft";
+            case "hp" -> n = "hitpoints";
+            case "con" -> n = "construction";
+            case "fm" -> n = "firemaking";
+            case "herb" -> n = "herblore";
+            case "agil" -> n = "agility";
+            case "thiev" -> n = "thieving";
+            case "slay" -> n = "slayer";
+            case "farm" -> n = "farming";
+            case "hunt" -> n = "hunter";
+            case "str" -> n = "strength";
+            case "att" -> n = "attack";
+            case "def" -> n = "defence";
+            case "pray" -> n = "prayer";
+            case "mage" -> n = "magic";
+            case "cook" -> n = "cooking";
+            case "fish" -> n = "fishing";
+            case "fletch" -> n = "fletching";
+            case "smith" -> n = "smithing";
+            case "mine" -> n = "mining";
+            case "craft" -> n = "crafting";
+        }
+
+        final String search = n;
+        return Arrays.stream(values())
+                .filter(s -> s.name().equalsIgnoreCase(search) || s.displayName().equalsIgnoreCase(search))
+                .findFirst();
+    }
 }

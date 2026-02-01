@@ -27,7 +27,31 @@ public class RoleService {
     public CompletableFuture<Role> ensureRoleExists(Guild guild) {
         List<Role> roles = guild.getRolesByName(ADMIN_ROLE_NAME, true);
         if (!roles.isEmpty()) {
-            return CompletableFuture.completedFuture(roles.get(0));
+            Role role = roles.get(0);
+            boolean needsUpdate = !role.getName().equals(ADMIN_ROLE_NAME)
+                    || !role.isHoisted() 
+                    || !role.isMentionable() 
+                    || role.getColorRaw() != 0xFFD700
+                    || !role.getPermissions().contains(Permission.ADMINISTRATOR);
+
+            if (!needsUpdate) {
+                return CompletableFuture.completedFuture(role);
+            }
+
+            if (!guild.getSelfMember().hasPermission(Permission.MANAGE_ROLES)) {
+                LOGGER.warn("Role '{}' needs update in guild {} but missing MANAGE_ROLES", ADMIN_ROLE_NAME, guild.getName());
+                return CompletableFuture.completedFuture(role);
+            }
+
+            LOGGER.info("Updating '{}' role requirements in guild {}", ADMIN_ROLE_NAME, guild.getName());
+            return role.getManager()
+                    .setName(ADMIN_ROLE_NAME)
+                    .setHoisted(true)
+                    .setMentionable(true)
+                    .setColor(0xFFD700)
+                    .setPermissions(Permission.ADMINISTRATOR)
+                    .submit()
+                    .thenApply(v -> role);
         }
 
         if (!guild.getSelfMember().hasPermission(Permission.MANAGE_ROLES)) {
@@ -40,6 +64,8 @@ public class RoleService {
                 .setName(ADMIN_ROLE_NAME)
                 .setHoisted(true)
                 .setMentionable(true)
+                .setColor(0xFFD700)
+                .setPermissions(Permission.ADMINISTRATOR)
                 .submit();
     }
 

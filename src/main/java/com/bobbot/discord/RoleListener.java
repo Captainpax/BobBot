@@ -5,6 +5,7 @@ import com.bobbot.service.HealthService;
 import com.bobbot.service.RoleService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.events.guild.GuildJoinEvent;
+import net.dv8tion.jda.api.events.role.RoleDeleteEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.slf4j.Logger;
@@ -38,5 +39,15 @@ public class RoleListener extends ListenerAdapter {
         roleService.ensureRoleExists(event.getGuild()).thenAccept(role -> {
             roleService.syncAllAdmins(event.getJDA(), storage.loadSettings().getAdminUserIds(), envConfig.superuserId());
         });
+    }
+    
+    @Override
+    public void onRoleDelete(RoleDeleteEvent event) {
+        if (event.getRole().getName().equalsIgnoreCase(RoleService.ADMIN_ROLE_NAME)) {
+            LOGGER.info("Admin role '{}' deleted in guild {}. Recreating.", RoleService.ADMIN_ROLE_NAME, event.getGuild().getName());
+            roleService.ensureRoleExists(event.getGuild()).thenAccept(role -> {
+                roleService.syncAllAdmins(event.getJDA(), storage.loadSettings().getAdminUserIds(), envConfig.superuserId());
+            });
+        }
     }
 }

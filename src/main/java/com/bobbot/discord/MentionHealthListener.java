@@ -1,6 +1,7 @@
 package com.bobbot.discord;
 
 import com.bobbot.service.HealthService;
+import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 
@@ -33,9 +34,10 @@ public class MentionHealthListener extends ListenerAdapter {
         if (!content.contains("you online") && !content.contains("online") && !content.contains("health")) {
             return;
         }
-        boolean online = healthService.isOnline(event.getJDA());
-        String reply = (online ? "yes" : "not quite") + "\n" + healthService.buildHealthReport(event.getJDA());
-        event.getChannel().sendMessage(reply).queue();
+
+        MessageEmbed embed = healthService.buildHealthEmbed(event.getJDA(), "all");
+        String prefix = healthService.isOnline(event.getJDA()) ? "Yes, I'm here!" : "Not quite, but I'm trying!";
+        event.getChannel().sendMessage(prefix).setEmbeds(embed).queue();
     }
 
     private String normalizedContent(MessageReceivedEvent event) {
