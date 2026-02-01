@@ -10,6 +10,9 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
+
 /**
  * Listener that handles AI chat in the designated channel.
  */
@@ -52,18 +55,29 @@ public class AiMessageListener extends ListenerAdapter {
             }
 
             event.getChannel().sendTyping().queue();
-            try {
-                String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
-                AiService.AiResult result = aiService.generateResponse(content, event.getAuthor().getId(), event.getChannel().getId(), guildId);
-                event.getMessage().reply(result.content()).queue();
+            String loadingMsg = AiService.getRandomLoadingMessage();
 
-                if (!result.thinking().isBlank()) {
-                    healthService.sendThinkingLog(event.getJDA(), event.getAuthor(), content, result.thinking());
-                }
-            } catch (Exception e) {
-                LOGGER.error("Failed to generate AI response", e);
-                event.getMessage().reply("Sorry, I'm having trouble thinking right now.").queue();
-            }
+            event.getMessage().reply(loadingMsg).queue(sentMsg -> {
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
+                        AiService.AiResult result = aiService.generateResponse(content, event.getAuthor().getId(), event.getChannel().getId(), guildId);
+
+                        String replyContent = result.content();
+                        if (replyContent.length() > 1990) {
+                            replyContent = replyContent.substring(0, 1987) + "...";
+                        }
+                        sentMsg.editMessage(replyContent).queue();
+
+                        if (!result.thinking().isBlank()) {
+                            healthService.sendThinkingLog(event.getJDA(), event.getAuthor(), content, result.thinking());
+                        }
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to generate AI response", e);
+                        sentMsg.editMessage("Sorry, I'm having trouble thinking right now. Blame it on the server lag.").queue();
+                    }
+                });
+            });
         }
     }
 }

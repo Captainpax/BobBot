@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class RoleService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RoleService.class);
-    public static final String ADMIN_ROLE_NAME = "bob master";
+    public static final String ADMIN_ROLE_NAME = "Bob's Master";
 
     /**
      * Ensure the admin role exists in the given guild.

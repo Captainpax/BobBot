@@ -56,10 +56,10 @@ public class BotApp {
         LevelUpService levelUpService = new LevelUpService(storage, envConfig);
         LeaderboardService leaderboardService = new LeaderboardService(storage, levelUpService);
         PriceService priceService = new PriceService();
-        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService);
         RoleService roleService = new RoleService();
         ConfigService configService = new ConfigService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
+        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
 
@@ -80,7 +80,7 @@ public class BotApp {
                     .setEventPool(eventPool)
                     .addEventListeners(
                             new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService),
-                            new ReadyNotificationListener(envConfig),
+                            new ReadyNotificationListener(envConfig, healthService),
                             new MentionHealthListener(healthService),
                             new AiMessageListener(storage, aiService, healthService),
                             new RoleListener(roleService, healthService, storage, envConfig)
@@ -100,7 +100,9 @@ public class BotApp {
                 .addChoice("chat", "chat")
                 .addChoice("discord", "discord");
         OptionData inviteTargetId = new OptionData(OptionType.STRING, "target_id", "chat or guild ID", true);
-        OptionData powerAction = new OptionData(OptionType.STRING, "action", "restart or shutdown", true)
+        OptionData powerAction = new OptionData(OptionType.STRING, "action", "reboot or stop the bot", true)
+                .addChoice("reboot", "reboot")
+                .addChoice("stop", "stop")
                 .addChoice("restart", "restart")
                 .addChoice("shutdown", "shutdown");
         OptionData statusState = new OptionData(OptionType.STRING, "state", "online, busy, or offline", true)
@@ -157,7 +159,10 @@ public class BotApp {
                                                         new SubcommandData("personality", "Upload a personality.txt file")
                                                                 .addOption(OptionType.ATTACHMENT, "file", "The personality.txt file", true),
                                                         new SubcommandData("test", "Test the AI configuration")
-                                                                .addOption(OptionType.STRING, "prompt", "Test prompt (default: Hello!)", false)
+                                                                .addOption(OptionType.STRING, "prompt", "Test prompt (default: Hello!)", false),
+                                                        new SubcommandData("toggle", "Toggle AI features")
+                                                                .addOptions(new OptionData(OptionType.STRING, "feature", "The feature to toggle", true)
+                                                                        .addChoice("thoughts", "thoughts"))
                                                 ),
                                         new SubcommandGroupData("osrs", "OSRS related administrative tasks")
                                                 .addSubcommands(

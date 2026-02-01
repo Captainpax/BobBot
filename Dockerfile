@@ -7,5 +7,7 @@ RUN gradle --no-daemon clean installDist
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/install/bobbot /app
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh /app/bin/bobbot
 ENV JAVA_OPTS="-Xms256m -Xmx512m"
-ENTRYPOINT ["/app/bin/bobbot"]
+ENTRYPOINT ["/app/entrypoint.sh"]

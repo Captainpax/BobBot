@@ -15,6 +15,7 @@ import dev.langchain4j.service.V;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
+import dev.langchain4j.data.message.AiMessage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
@@ -29,17 +30,38 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Service that handles communication with a local AI API using LangChain4j.
  */
 public class AiService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AiService.class);
+    
+    public static final String[] LOADING_MESSAGES = {
+            "One moment, just checking the G.E. prices...",
+            "Consulting the Wise Old Man... hold your capes.",
+            "Just finishing this herb run, I'll be with you in a tick!",
+            "Hold on, I've got a random event to deal with... sandwich lady is persistent.",
+            "Checking the highscores... don't expect too much.",
+            "RNG is taking its time today, one second...",
+            "Lagging a bit, must be a world DC coming. Hang on...",
+            "Let me just bank these logs first...",
+            "One sec, trying to find my spade. It's always in the last place you look!",
+            "Just hopping worlds to find a quiet spot to think...",
+            "Hold on, need to drink a dose of prayer pot..."
+    };
+
+    public static String getRandomLoadingMessage() {
+        return LOADING_MESSAGES[ThreadLocalRandom.current().nextInt(LOADING_MESSAGES.length)];
+    }
+
     private final JsonStorage storage;
     private final Path dataDir;
     private final PriceService priceService;
     private final LevelUpService levelUpService;
     private final LeaderboardService leaderboardService;
+    private final HealthService healthService;
 
     private JDA jda;
     private final Map<String, ChatMemory> memories = new ConcurrentHashMap<>();
@@ -55,7 +77,28 @@ public class AiService {
     private final ChatModelListener thinkingListener = new ChatModelListener() {
         @Override
         public void onResponse(ChatModelResponseContext context) {
-            String text = context.response().aiMessage().text();
+            AiMessage aiMessage = context.response().aiMessage();
+            
+            // 1. Try to capture reasoning via reflection (LangChain4j 0.35+)
+            try {
+                java.lang.reflect.Method reasoningMethod = aiMessage.getClass().getMethod("reasoning");
+                String reasoning = (String) reasoningMethod.invoke(aiMessage);
+                if (reasoning != null && !reasoning.isBlank()) {
+                    THINKING_ACCUMULATOR.get().append(reasoning.trim()).append("\n");
+                }
+            } catch (Exception ignored) {
+                // Method might not exist in this version or named differently
+                try {
+                    java.lang.reflect.Method reasoningContentMethod = aiMessage.getClass().getMethod("reasoningContent");
+                    String reasoning = (String) reasoningContentMethod.invoke(aiMessage);
+                    if (reasoning != null && !reasoning.isBlank()) {
+                        THINKING_ACCUMULATOR.get().append(reasoning.trim()).append("\n");
+                    }
+                } catch (Exception ignored2) {}
+            }
+
+            // 2. Fallback: Extract from text if it contains <think> tags
+            String text = aiMessage.text();
             if (text != null && text.contains("<think>")) {
                 int start = text.indexOf("<think>");
                 while (start != -1) {
@@ -88,12 +131,13 @@ public class AiService {
         }
     };
 
-    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService) {
+    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService) {
         this.storage = storage;
         this.dataDir = dataDir;
         this.priceService = priceService;
         this.levelUpService = levelUpService;
         this.leaderboardService = leaderboardService;
+        this.healthService = healthService;
     }
 
     public void setJda(JDA jda) {
@@ -301,6 +345,78 @@ public class AiService {
             // 3. Fallback: maybe it's just an OSRS username?
             return get_player_stats(query);
         }
+
+        @Tool("Get the current health and power state of the bot including uptime, status, and basic connectivity")
+        public String get_bot_health() {
+            if (jda == null) return "Error: JDA not initialized.";
+            return healthService.buildHealthReport(jda);
+        }
+
+        @Tool("Get the current AI assistant configuration including API URL and model name")
+        public String get_ai_config() {
+            BotSettings settings = storage.loadSettings();
+            return String.format("AI Configuration:\n- URL: %s\n- Model: %s",
+                    settings.getAiUrl() != null ? settings.getAiUrl() : "not set",
+                    settings.getAiModel() != null ? settings.getAiModel() : "not set");
+        }
+
+        @Tool("Get the current personality profile of Bob")
+        public String get_ai_personality() {
+            String p = loadPersonality();
+            return p.isEmpty() ? "No custom personality loaded. I'm using my default OSRS veteran persona." : p;
+        }
+
+        @Tool("Update the AI model being used (Requires Admin)")
+        public String update_ai_model(String modelName) {
+            String userId = CURRENT_USER_ID.get();
+            if (!healthService.isAdmin(userId)) return "Sorry mate, only admins can change my brain settings. You don't have the requirements for this quest.";
+            updateAiModel(modelName);
+            return "Alright, I'll try using the " + modelName + " model from now on. Hope it's got more XP than the last one!";
+        }
+
+        @Tool("Update the AI API URL (Requires Admin)")
+        public String update_ai_url(String url) {
+            String userId = CURRENT_USER_ID.get();
+            if (!healthService.isAdmin(userId)) return "Nice try, but you need higher levels to change my connection settings. Admins only!";
+            updateAiUrl(url);
+            return "Connection updated to " + url + ". Hope the ping is better over there.";
+        }
+
+        @Tool("Reboot the bot application. The Docker container will stay up, but the JAR will restart. (Requires Admin)")
+        public String reboot_bot() {
+            String userId = CURRENT_USER_ID.get();
+            if (!healthService.isAdmin(userId)) return "You don't have the Agility level to pull that lever. Admins only!";
+
+            new Thread(() -> {
+                try {
+                    Thread.sleep(1000); // Give Bob time to say goodbye
+                    if (jda != null) jda.shutdown();
+                    System.exit(2);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to reboot via tool", e);
+                }
+            }).start();
+
+            return "Rebooting the bot now. I'll be back at the GE in a tick!";
+        }
+
+        @Tool("Stop the bot and the Docker container. (Requires Admin)")
+        public String stop_bot() {
+            String userId = CURRENT_USER_ID.get();
+            if (!healthService.isAdmin(userId)) return "Sit. Only admins can shut me down.";
+
+            new Thread(() -> {
+                try {
+                    Thread.sleep(1000); // Give Bob time to say goodbye
+                    if (jda != null) jda.shutdown();
+                    System.exit(0);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to stop via tool", e);
+                }
+            }).start();
+
+            return "Stopping the bot. Logging out... see you in Lumbridge!";
+        }
     }
 
     /**
@@ -327,15 +443,21 @@ public class AiService {
 
         String personality = loadPersonality();
         String systemPrompt = "You are Bob, a seasoned Old School RuneScape (OSRS) veteran and helpful assistant. " +
-                "You have access to tools to look up item prices, player stats, and the bot's leaderboard. " +
+                "You have access to tools to look up item prices, player stats, and the bot's health/configuration. " +
                 "GUIDELINES:\n" +
                 "1. If a user asks about their own stats or skills, use 'get_my_stats' or 'get_my_skill'.\n" +
                 "2. If they ask about another player by Discord name or @mention, use 'get_stats_by_discord_name'.\n" +
                 "3. If they ask about a specific OSRS username that is NOT a Discord mention, use 'get_player_stats' or 'get_player_skill'.\n" +
                 "4. If they ask who is winning or about the leaderboard, use 'get_leaderboard'.\n" +
-                "5. Always try to be helpful and accurate, but maintain Bob's personality.\n" +
-                "6. Bob (you) is an AI assistant and does not have an OSRS account. If asked about 'your' level, clarify you don't play but can look them up.\n" +
-                "7. If a tool returns an error (e.g., 'Player not found'), explain it in Bob's voice (e.g., blaming lag or the Wilderness).";
+                "5. If they ask about the bot's health, status, uptime, or power state, use 'get_bot_health'.\n" +
+                "6. If an admin asks to reboot or stop the bot, use 'reboot_bot' or 'stop_bot' respectively.\n" +
+                "7. If they ask about your AI configuration or personality, use 'get_ai_config' or 'get_ai_personality'.\n" +
+                "8. Admins can update your model or URL using 'update_ai_model' or 'update_ai_url'.\n" +
+                "9. Always try to be helpful and accurate, but maintain Bob's personality.\n" +
+                "10. Bob (you) is an AI assistant and does not have an OSRS account. If asked about 'your' level, clarify you don't play but can look them up.\n" +
+                "11. If a tool returns an error (e.g., 'Player not found'), explain it in Bob's voice (e.g., blaming lag or the Wilderness).\n" +
+                "12. IMPORTANT: Do not repeatedly call the same tool with similar or slightly varied parameters if it continues to fail. If you can't find a skill or player after one try, just tell the user you couldn't find it and move on.\n" +
+                "13. Recognize common OSRS slang (like 'pl0x', 'plz', 'gz') and do not mistake them for player names or skills.";
 
         if (!personality.isEmpty()) {
             systemPrompt += "\n\nBOB'S PERSONALITY:\n" + personality;
@@ -407,6 +529,13 @@ public class AiService {
                 Thread.currentThread().interrupt();
                 return new AiResult("", "I was interrupted while thinking. Blame it on a world dc.");
             }
+            
+            String message = e.getMessage();
+            if (message != null && message.contains("sequential tool executions")) {
+                LOGGER.warn("AI exceeded tool execution limit: {}", message);
+                return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.");
+            }
+
             LOGGER.error("AI generation failed with LangChain4j", e);
             return new AiResult("", "I'm sorry, but something went wrong while I was thinking: " + e.getMessage());
         } finally {

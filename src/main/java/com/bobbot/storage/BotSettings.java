@@ -20,6 +20,7 @@ public class BotSettings {
     private final String aiModel;
     private final Instant lastLeaderboardTimestamp;
     private final Set<String> adminUserIds;
+    private final Set<String> thoughtRecipientIds;
 
     /**
      * Create a settings object.
@@ -32,6 +33,7 @@ public class BotSettings {
      * @param aiModel AI model name
      * @param lastLeaderboardTimestamp last leaderboard timestamp
      * @param adminUserIds list of admin user IDs
+     * @param thoughtRecipientIds set of user IDs who want to receive AI thinking logs via DM
      */
     @JsonCreator
     public BotSettings(@JsonProperty("leaderboardChannelId") String leaderboardChannelId,
@@ -41,7 +43,8 @@ public class BotSettings {
                        @JsonProperty("aiUrl") String aiUrl,
                        @JsonProperty("aiModel") String aiModel,
                        @JsonProperty("lastLeaderboardTimestamp") Instant lastLeaderboardTimestamp,
-                       @JsonProperty("adminUserIds") Set<String> adminUserIds) {
+                       @JsonProperty("adminUserIds") Set<String> adminUserIds,
+                       @JsonProperty("thoughtRecipientIds") Set<String> thoughtRecipientIds) {
         this.leaderboardChannelId = leaderboardChannelId;
         this.bobsChatChannelId = bobsChatChannelId;
         this.botStatus = botStatus;
@@ -50,6 +53,7 @@ public class BotSettings {
         this.aiModel = aiModel;
         this.lastLeaderboardTimestamp = lastLeaderboardTimestamp;
         this.adminUserIds = adminUserIds != null ? new HashSet<>(adminUserIds) : new HashSet<>();
+        this.thoughtRecipientIds = thoughtRecipientIds != null ? new HashSet<>(thoughtRecipientIds) : new HashSet<>();
     }
 
     /**
@@ -109,13 +113,20 @@ public class BotSettings {
     }
 
     /**
+     * @return set of user IDs who want to receive AI thinking logs via DM
+     */
+    public Set<String> getThoughtRecipientIds() {
+        return Collections.unmodifiableSet(thoughtRecipientIds);
+    }
+
+    /**
      * Create a new settings object with the given leaderboard channel ID.
      *
      * @param channelId channel ID
      * @return updated settings
      */
     public BotSettings withLeaderboardChannelId(String channelId) {
-        return new BotSettings(channelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(channelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -125,7 +136,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withBobsChatChannelId(String channelId) {
-        return new BotSettings(leaderboardChannelId, channelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, channelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -135,7 +146,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withBotStatus(String status) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, status, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, status, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -145,7 +156,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withEnvironment(String environment) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -155,7 +166,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withAiUrl(String aiUrl) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -165,7 +176,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withAiModel(String aiModel) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -175,7 +186,7 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withLastLeaderboardTimestamp(Instant timestamp) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, timestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, timestamp, adminUserIds, thoughtRecipientIds);
     }
 
     /**
@@ -185,6 +196,16 @@ public class BotSettings {
      * @return updated settings
      */
     public BotSettings withAdminUserIds(Set<String> adminUserIds) {
-        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds);
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
+    }
+
+    /**
+     * Create a new settings object with the given thought recipient IDs.
+     *
+     * @param thoughtRecipientIds set of user IDs
+     * @return updated settings
+     */
+    public BotSettings withThoughtRecipientIds(Set<String> thoughtRecipientIds) {
+        return new BotSettings(leaderboardChannelId, bobsChatChannelId, botStatus, environment, aiUrl, aiModel, lastLeaderboardTimestamp, adminUserIds, thoughtRecipientIds);
     }
 }

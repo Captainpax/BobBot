@@ -185,7 +185,7 @@ public class HealthService {
     }
 
     /**
-     * Send an AI thinking log to the superuser.
+     * Send an AI thinking log to users who have opted in.
      *
      * @param jda JDA instance
      * @param author the user who triggered the AI
@@ -193,36 +193,82 @@ public class HealthService {
      * @param thinking the thinking log from the AI
      */
     public void sendThinkingLog(JDA jda, net.dv8tion.jda.api.entities.User author, String prompt, String thinking) {
-        String superuserId = envConfig.superuserId();
-        if (superuserId == null || superuserId.isBlank()) {
-            return;
+        BotSettings settings = storage.loadSettings();
+        Set<String> recipientIds = new HashSet<>(settings.getThoughtRecipientIds());
+        
+        // If nobody has opted in, default to the superuser to avoid complete loss of logs
+        if (recipientIds.isEmpty()) {
+            String superuserId = envConfig.superuserId();
+            if (superuserId != null && !superuserId.isBlank()) {
+                recipientIds.add(superuserId);
+            }
         }
 
-        jda.retrieveUserById(superuserId).queue(user -> {
-            user.openPrivateChannel().queue(channel -> {
-                String header = String.format("**AI Thinking Log**\n" +
-                                "**For:** %s (%s)\n" +
-                                "**Prompt:** %s\n",
-                        author.getAsTag(),
-                        author.getId(),
-                        prompt);
-                
-                channel.sendMessage(header).queue();
+        for (String userId : recipientIds) {
+            if (!isAdmin(userId)) continue;
 
-                // Split thinking log into chunks if necessary
-                if (thinking.length() <= 1900) {
-                    channel.sendMessage("```\n" + thinking + "\n```").queue();
-                } else {
-                    int start = 0;
-                    while (start < thinking.length()) {
-                        int end = Math.min(start + 1900, thinking.length());
-                        String chunk = thinking.substring(start, end);
-                        channel.sendMessage("```\n" + chunk + "\n```").queue();
-                        start = end;
+            LOGGER.debug("Attempting to send thinking log to user {}", userId);
+            jda.retrieveUserById(userId).queue(user -> {
+                user.openPrivateChannel().queue(channel -> {
+                    String header = String.format("**AI Thinking Log**\n" +
+                                    "**For:** %s (%s)\n" +
+                                    "**Prompt:** %s\n",
+                            author.getAsTag(),
+                            author.getId(),
+                            prompt);
+                    
+                    if (header.length() > 2000) {
+                        header = header.substring(0, 1990) + "...";
                     }
-                }
-            });
-        }, error -> LOGGER.warn("Failed to retrieve superuser {} to send thinking log", superuserId, error));
+
+                    channel.sendMessage(header).queue(
+                        s -> LOGGER.debug("Sent thinking log header to {}", user.getId()),
+                        f -> LOGGER.warn("Failed to send thinking log header to {}", user.getId(), f)
+                    );
+
+                    // Split thinking log into chunks if necessary
+                    if (thinking.length() <= 1900) {
+                        channel.sendMessage("```\n" + thinking + "\n```").queue(
+                            s -> LOGGER.debug("Sent thinking log body to {}", user.getId()),
+                            f -> LOGGER.warn("Failed to send thinking log body to {}", user.getId(), f)
+                        );
+                    } else {
+                        int start = 0;
+                        int part = 1;
+                        while (start < thinking.length()) {
+                            int end = Math.min(start + 1900, thinking.length());
+                            String chunk = thinking.substring(start, end);
+                            channel.sendMessage(String.format("```\n(Part %d)\n%s\n```", part++, chunk)).queue(
+                                s -> LOGGER.debug("Sent thinking log part to {}", user.getId()),
+                                f -> LOGGER.warn("Failed to send thinking log part to {}", user.getId(), f)
+                            );
+                            start = end;
+                        }
+                    }
+                }, error -> LOGGER.warn("Failed to open private channel to user {} to send thinking log", user.getId(), error));
+            }, error -> LOGGER.warn("Failed to retrieve user {} to send thinking log.", userId, error));
+        }
+    }
+
+    /**
+     * Toggle the AI thinking log preference for a user.
+     *
+     * @param userId Discord user ID
+     * @return true if enabled, false if disabled
+     */
+    public boolean toggleThoughts(String userId) {
+        BotSettings settings = storage.loadSettings();
+        Set<String> recipients = new HashSet<>(settings.getThoughtRecipientIds());
+        boolean enabled;
+        if (recipients.contains(userId)) {
+            recipients.remove(userId);
+            enabled = false;
+        } else {
+            recipients.add(userId);
+            enabled = true;
+        }
+        storage.saveSettings(settings.withThoughtRecipientIds(recipients));
+        return enabled;
     }
 
     /**

@@ -35,6 +35,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -474,6 +475,29 @@ public class SlashCommandListener extends ListenerAdapter {
             });
         } else if ("test".equals(subcommand)) {
             handleAdminAiTest(event);
+        } else if ("toggle".equals(subcommand)) {
+            handleAdminAiToggle(event);
+        }
+    }
+
+    /**
+     * Handle the /admin ai toggle command.
+     *
+     * @param event slash command event
+     */
+    private void handleAdminAiToggle(SlashCommandInteractionEvent event) {
+        if (!healthService.isAdmin(event.getUser().getId())) {
+            event.reply("Only admins can toggle AI features.").setEphemeral(true).queue();
+            return;
+        }
+
+        String feature = getRequiredOption(event, "feature");
+        if ("thoughts".equals(feature)) {
+            boolean enabled = healthService.toggleThoughts(event.getUser().getId());
+            String status = enabled ? "enabled" : "disabled";
+            event.reply("AI thought DMs are now **" + status + "** for you.").setEphemeral(true).queue();
+        } else {
+            event.reply("Unknown feature: " + feature).setEphemeral(true).queue();
         }
     }
 
@@ -488,19 +512,29 @@ public class SlashCommandListener extends ListenerAdapter {
             prompt = event.getOption("prompt").getAsString();
         }
 
-        event.deferReply(true).queue();
-        try {
-            String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
-            AiService.AiResult result = aiService.generateResponse(prompt, event.getUser().getId(), event.getChannel().getId(), guildId);
-            event.getHook().sendMessage("**Prompt:** " + prompt + "\n**AI Response:** " + result.content()).queue();
+        final String finalPrompt = prompt;
+        event.deferReply(true).queue(hook -> {
+            hook.editOriginal(AiService.getRandomLoadingMessage()).queue();
+            CompletableFuture.runAsync(() -> {
+                try {
+                    String guildId = event.isFromGuild() ? event.getGuild().getId() : null;
+                    AiService.AiResult result = aiService.generateResponse(finalPrompt, event.getUser().getId(), event.getChannel().getId(), guildId);
+                    
+                    String response = "**Prompt:** " + finalPrompt + "\n**AI Response:** " + result.content();
+                    if (response.length() > 1990) {
+                        response = response.substring(0, 1987) + "...";
+                    }
+                    hook.editOriginal(response).queue();
 
-            if (!result.thinking().isBlank()) {
-                healthService.sendThinkingLog(event.getJDA(), event.getUser(), prompt, result.thinking());
-            }
-        } catch (Exception e) {
-            LOGGER.error("AI test failed", e);
-            event.getHook().sendMessage("AI test failed: " + e.getMessage()).queue();
-        }
+                    if (!result.thinking().isBlank()) {
+                        healthService.sendThinkingLog(event.getJDA(), event.getUser(), finalPrompt, result.thinking());
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("AI test failed", e);
+                    hook.editOriginal("AI test failed: " + e.getMessage()).queue();
+                }
+            });
+        });
     }
 
     /**
@@ -618,16 +652,18 @@ public class SlashCommandListener extends ListenerAdapter {
             return;
         }
         String normalizedAction = action.toLowerCase(Locale.ROOT);
-        if (!normalizedAction.equals("restart") && !normalizedAction.equals("shutdown")) {
-            event.reply("Action must be restart or shutdown.")
+        if (!normalizedAction.equals("restart") && !normalizedAction.equals("shutdown")
+                && !normalizedAction.equals("reboot") && !normalizedAction.equals("stop")) {
+            event.reply("Action must be reboot, stop, restart, or shutdown.")
                     .setEphemeral(true)
                     .queue();
             return;
         }
-        int exitCode = normalizedAction.equals("restart") ? 2 : 0;
-        String message = normalizedAction.equals("restart")
-                ? "Restarting bot now."
-                : "Shutting down bot now.";
+        boolean isRestart = normalizedAction.equals("restart") || normalizedAction.equals("reboot");
+        int exitCode = isRestart ? 2 : 0;
+        String message = isRestart
+                ? "Rebooting bot now."
+                : "Stopping bot now.";
         event.reply(message)
                 .setEphemeral(true)
                 .queue(success -> shutdown(event.getJDA(), normalizedAction, exitCode));
