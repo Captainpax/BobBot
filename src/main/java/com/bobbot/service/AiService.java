@@ -6,6 +6,7 @@ import com.bobbot.storage.BotSettings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.util.FormatUtils;
+import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -55,7 +56,14 @@ public class AiService {
             "Let me just bank these logs first...",
             "One sec, trying to find my spade. It's always in the last place you look!",
             "Just hopping worlds to find a quiet spot to think...",
-            "Hold on, need to drink a dose of prayer pot..."
+            "Hold on, need to drink a dose of prayer pot...",
+            "Panic selling my bank to afford the latest meta, be right with you...",
+            "Just getting a quick trim for my armor, should be done soon...",
+            "Buying GF 10k, hang on...",
+            "Getting sit by Zulrah, one moment...",
+            "Drinking a dose of stamina pot for the long thinking sprint...",
+            "Looking for a world that isn't full of bots...",
+            "Adjusting my mouse sensitivity for some tick-perfect responses..."
     };
 
     public static String getRandomLoadingMessage() {
@@ -84,6 +92,7 @@ public class AiService {
     private static final ThreadLocal<String> LAST_PAGINATION_ID = new ThreadLocal<>();
     private static final ThreadLocal<StringBuilder> THINKING_ACCUMULATOR = ThreadLocal.withInitial(StringBuilder::new);
     private static final ThreadLocal<Map<String, Integer>> TOOL_CALL_MAP = ThreadLocal.withInitial(HashMap::new);
+    private static final ThreadLocal<Integer> TOOL_CALL_COUNT = ThreadLocal.withInitial(() -> 0);
 
     private static class LoopDetectedException extends RuntimeException {
         public LoopDetectedException(String message) {
@@ -120,6 +129,14 @@ public class AiService {
             if (aiMessage.hasToolExecutionRequests() && aiMessage.toolExecutionRequests() != null) {
                 aiMessage.toolExecutionRequests().forEach(request -> {
                     if (request == null) return;
+                    
+                    // Increment total count
+                    int total = TOOL_CALL_COUNT.get() + 1;
+                    TOOL_CALL_COUNT.set(total);
+                    if (total > 5) {
+                        throw new LoopDetectedException("I've tried too many tools (5) to answer this. I'm getting confused, mate!");
+                    }
+
                     String name = request.name() != null ? request.name() : "unknown";
                     String args = request.arguments() != null ? request.arguments() : "";
                     String key = name + ":" + args;
@@ -209,7 +226,7 @@ public class AiService {
 
     public class BobTools {
         @Tool("Get the current Grand Exchange price for an OSRS item")
-        public String get_item_price(String item_name) {
+        public String get_item_price(@P("item_name") String item_name) {
             try {
                 return priceService.lookupPrice(item_name)
                         .map(info -> String.format("Item: %s, High: %s, Low: %s",
@@ -247,7 +264,7 @@ public class AiService {
         }
 
         @Tool("Get the level and XP for a specific skill for the user who is speaking")
-        public String get_my_skill(String skillName) {
+        public String get_my_skill(@P("skill_name") String skillName) {
             String userId = CURRENT_USER_ID.get();
             if (userId == null) return "Error: No user context found.";
             try {
@@ -264,10 +281,10 @@ public class AiService {
             }
         }
 
-        @Tool("Get the OSRS stats (all skills) for a specific player by their OSRS username. OSRS usernames are max 12 characters and contain no special symbols. Do NOT use this for your own stats, skill names, or general chat.")
-        public String get_player_stats(String username) {
-            if (username != null && username.equalsIgnoreCase("bob")) {
-                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_stats'.";
+        @Tool("Get the OSRS stats (all skills) for a specific player by their OSRS username. OSRS usernames are max 12 characters. Do NOT use this for NPCs, lore characters (like Wise Old Man), your own stats, skill names, or general chat.")
+        public String get_player_stats(@P("username") String username) {
+            if (username != null && (username.equalsIgnoreCase("bob") || username.equalsIgnoreCase("wise old man") || username.equalsIgnoreCase("wise_old_man"))) {
+                return "That character is part of OSRS lore, mate! They aren't on the hiscore scrolls. Try checking a real player's stats instead.";
             }
             if (!FormatUtils.isValidOsrsUsername(username)) {
                 return String.format("'%s' does not look like a valid OSRS username, mate. Usernames are max 12 characters and only have letters, numbers, spaces, underscores, or hyphens. If you're just chatting with me, don't use this tool.", username);
@@ -286,16 +303,16 @@ public class AiService {
                 LOGGER.error("Error in get_player_stats tool", e);
                 String msg = e.getMessage();
                 if (msg != null && msg.contains("not found on OSRS hiscores")) {
-                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. Do NOT keep trying to look up this name as a player.", username);
+                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. I've double checked the hiscore scrolls and they aren't there. Do NOT keep trying to look up this exact name as a player.", username);
                 }
                 return "Error fetching stats for " + username + ": " + e.getMessage();
             }
         }
 
-        @Tool("Get the level and XP for a specific skill for a specific player by their OSRS username. OSRS usernames are max 12 characters and contain no special symbols. Do NOT use this for your own stats or general chat.")
-        public String get_player_skill(String username, String skillName) {
-            if (username != null && username.equalsIgnoreCase("bob")) {
-                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_skill'.";
+        @Tool("Get the level and XP for a specific skill for a specific player by their OSRS username. OSRS usernames are max 12 characters. Do NOT use this for NPCs, lore characters, your own stats, or general chat.")
+        public String get_player_skill(@P("username") String username, @P("skill_name") String skillName) {
+            if (username != null && (username.equalsIgnoreCase("bob") || username.equalsIgnoreCase("wise old man") || username.equalsIgnoreCase("wise_old_man"))) {
+                return "That character is part of OSRS lore, mate! They aren't on the hiscore scrolls. Try checking a real player's level instead.";
             }
             if (!FormatUtils.isValidOsrsUsername(username)) {
                 return String.format("'%s' does not look like a valid OSRS username, mate. Usernames are max 12 characters and only have letters, numbers, spaces, underscores, or hyphens. If you're just chatting with me, don't use this tool.", username);
@@ -321,7 +338,7 @@ public class AiService {
                             String summary = wikiService.getSkillSummary(s.skill()).orElse("");
                             return base + "\nWiki: " + wikiUrl + (summary.isEmpty() ? "" : "\nSummary: " + summary);
                         })
-                        .orElse("Player '" + username + "' is unranked in " + finalSkill.displayName() + ".");
+                        .orElse("Player '" + username + "' is unranked in " + finalSkill.displayName() + " (they have less than 15 XP or aren't on hiscores). I've checked the official hiscores and they aren't listed for this skill. Do NOT keep retrying this exact lookup.");
             } catch (Exception e) {
                 if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
@@ -330,7 +347,7 @@ public class AiService {
                 LOGGER.error("Error in get_player_skill tool", e);
                 String msg = e.getMessage();
                 if (msg != null && msg.contains("not found on OSRS hiscores")) {
-                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. Do NOT keep trying to look up this name as a player.", username);
+                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. I've double checked the hiscore scrolls and they aren't there. Do NOT keep trying to look up this exact name as a player.", username);
                 }
                 return "Error fetching " + skillName + " for " + username + ": " + e.getMessage();
             }
@@ -361,15 +378,15 @@ public class AiService {
         }
 
         @Tool("Get the OSRS stats for a Discord user mentioned by name, nickname, or @mention")
-        public String get_stats_by_discord_name(String nameOrMention) {
+        public String get_stats_by_discord_name(@P("name_or_mention") String nameOrMention) {
             if (jda == null) return "Error: JDA not initialized.";
             String guildId = CURRENT_GUILD_ID.get();
             
             // Clean up name/mention
             String query = nameOrMention.replace("@", "").replace("<", "").replace(">", "").replace("!", "").trim();
 
-            if (query.equalsIgnoreCase("bob")) {
-                return "That's me, mate! I don't have OSRS stats, I'm just here to help. Try checking your own stats with 'get_my_stats'.";
+            if (query.equalsIgnoreCase("bob") || query.equalsIgnoreCase("wise old man") || query.equalsIgnoreCase("wise_old_man")) {
+                return "That character is part of OSRS lore, mate! They aren't on the hiscore scrolls. Try checking a real player's stats instead.";
             }
             
             // 1. Try to find by ID if it's a mention
@@ -438,7 +455,7 @@ public class AiService {
         }
 
         @Tool("Update the AI model being used (Requires Admin)")
-        public String update_ai_model(String modelName) {
+        public String update_ai_model(@P("model_name") String modelName) {
             String userId = CURRENT_USER_ID.get();
             if (!healthService.isAdmin(userId)) return "Sorry mate, only admins can change my brain settings. You don't have the requirements for this quest.";
             updateAiModel(modelName);
@@ -446,7 +463,7 @@ public class AiService {
         }
 
         @Tool("Update the AI API URL (Requires Admin)")
-        public String update_ai_url(String url) {
+        public String update_ai_url(@P("url") String url) {
             String userId = CURRENT_USER_ID.get();
             if (!healthService.isAdmin(userId)) return "Nice try, but you need higher levels to change my connection settings. Admins only!";
             updateAiUrl(url);
@@ -496,7 +513,7 @@ public class AiService {
         }
 
         @Tool("Display a long list of items or information in a paginated view with buttons. Use this when you have a lot of data to show (e.g. many player stats, price lists, or search results).")
-        public String display_paginated_report(String title, List<String> items) {
+        public String display_paginated_report(@P("title") String title, @P("items") List<String> items) {
             if (items == null || items.isEmpty()) return "Nothing to show in the report, mate.";
             String sessionId = paginationService.createSession(title, "", items, 10);
             LAST_PAGINATION_ID.set(sessionId);
@@ -504,7 +521,7 @@ public class AiService {
         }
 
         @Tool("Compare the current Grand Exchange prices of two OSRS items")
-        public String compare_prices(String item1, String item2) {
+        public String compare_prices(@P("item1") String item1, @P("item2") String item2) {
             try {
                 var info1Opt = priceService.lookupPrice(item1);
                 var info2Opt = priceService.lookupPrice(item2);
@@ -531,7 +548,7 @@ public class AiService {
         }
 
         @Tool("Compare two of the user's own OSRS skills (level and XP)")
-        public String compare_my_skills(String skill1, String skill2) {
+        public String compare_my_skills(@P("skill1") String skill1, @P("skill2") String skill2) {
             String userId = CURRENT_USER_ID.get();
             if (userId == null) return "Error: No user context found.";
             try {
@@ -569,16 +586,19 @@ public class AiService {
         }
 
         @Tool("Get detailed information about an OSRS quest by its name (e.g., 'Dragon Slayer')")
-        public String get_quest_info(String quest_name) {
+        public String get_quest_info(@P("quest_name") String quest_name) {
             try {
                 return apiClient.fetchQuestInfo(quest_name)
                         .map(node -> {
+                            String name = node.path("name").asText();
+                            String wikiUrl = wikiService.getWikiUrl(name);
                             StringBuilder sb = new StringBuilder();
-                            sb.append("Quest: ").append(node.path("name").asText()).append("\n");
+                            sb.append("Quest: ").append(name).append("\n");
                             sb.append("Difficulty: ").append(node.path("difficulty").asText()).append("\n");
                             sb.append("Length: ").append(node.path("length").asText()).append("\n");
                             sb.append("Requirements: ").append(node.path("requirements").toString()).append("\n");
-                            sb.append("Rewards: ").append(node.path("rewards").toString());
+                            sb.append("Rewards: ").append(node.path("rewards").toString()).append("\n");
+                            sb.append("Wiki: ").append(wikiUrl);
                             return sb.toString();
                         })
                         .orElse("I couldn't find any info on a quest named '" + quest_name + "'. Maybe check the spelling, mate?");
@@ -588,7 +608,7 @@ public class AiService {
         }
 
         @Tool("Get the list of possible slayer tasks for a specific slayer master (Duradel, Nieve, Konar)")
-        public String get_slayer_tasks(String master_name) {
+        public String get_slayer_tasks(@P("master_name") String master_name) {
             try {
                 List<JsonNode> tasks = apiClient.fetchSlayerTasks(master_name);
                 if (tasks.isEmpty()) {
@@ -603,6 +623,16 @@ public class AiService {
                 return "Slayer tasks for " + master_name + ":\n" + String.join(", ", taskNames);
             } catch (Exception e) {
                 return "Error fetching slayer tasks: " + e.getMessage();
+            }
+        }
+
+        @Tool("Roll for a pet to see if the user got lucky. Purely for fun/roleplay. Do NOT use this if the user is just asking about boss levels or stats.")
+        public String roll_for_pet(@P("boss_name") String bossName) {
+            int roll = ThreadLocalRandom.current().nextInt(3000) + 1;
+            if (roll == 1) {
+                return "OH MY GUTHIX! You just got the " + bossName + " pet! Gz, mate! Huge spoon! 🥄";
+            } else {
+                return "Bad luck, mate. You rolled a " + roll + " / 3000. No pet for you this time. Back to the grind!";
             }
         }
     }
@@ -673,6 +703,12 @@ public class AiService {
                 "- Linked OSRS Name: " + osrsUsername + "\n" +
                 "- Server: " + guildName + "\n" +
                 "- Channel: " + channelName + "\n\n" +
+                "INTENT DETECTION & CORE RULES:\n" +
+                "1. CHAT/LORE/RP INTENT: If the user is greeting you, joking, talking about OSRS lore (NPCs like Wise Old Man, King Roald, Gods), or roleplaying, DO NOT use any tools. Respond in character with your veteran wit.\n" +
+                "2. DATA LOOKUP INTENT: If the user explicitly asks for a price, a player's level/stats, quest info, or slayer tasks, use the appropriate tool.\n" +
+                "3. UNCERTAINTY: If you aren't 100% sure if they want data or a joke, lean towards a character-driven chat response first.\n" +
+                "4. NPCs ARE NOT PLAYERS: Do not attempt to look up stats for OSRS NPCs or bosses (e.g. Wise Old Man, Zulrah) using player tools.\n" +
+                "5. NO LOOPS: If a tool fails once, do not keep trying the same thing. Blame RNG or lag and move on.\n\n" +
                 "IMPORTANT:\n" +
                 "- DO NOT use tools for simple greetings or general chat.\n" +
                 "- If the user is just saying 'hi', 'how are you', or asking about you (Bob), respond in character without calling any tools.\n" +
@@ -687,6 +723,7 @@ public class AiService {
             CURRENT_GUILD_ID.set(guildId);
             LAST_PAGINATION_ID.remove();
             TOOL_CALL_MAP.get().clear();
+            TOOL_CALL_COUNT.set(0);
 
             // Lazy initialization of model and proxy
             if (cachedModel == null || assistantProxy == null || !url.equals(lastUrl) || !modelName.equals(lastModelName)) {

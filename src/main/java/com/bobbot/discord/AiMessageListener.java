@@ -97,6 +97,13 @@ public class AiMessageListener extends ListenerAdapter {
             return;
         }
 
+        // 10% chance to react with a fun OSRS-themed emoji
+        if (ThreadLocalRandom.current().nextInt(100) < 10) {
+            String[] emojis = {"💰", "📜", "⚔️", "🛡️", "⛏️", "🪵", "🔥", "🎣", "🥄", "🤖"};
+            String emoji = emojis[ThreadLocalRandom.current().nextInt(emojis.length)];
+            event.getMessage().addReaction(Emoji.fromFormatted(emoji)).queue();
+        }
+
         event.getChannel().sendTyping().queue();
         String loadingMsg = AiService.getRandomLoadingMessage();
 

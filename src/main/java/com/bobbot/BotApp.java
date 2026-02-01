@@ -70,7 +70,7 @@ public class BotApp {
         ConfigService configService = new ConfigService();
         PaginationService paginationService = new PaginationService();
         WikiService wikiService = new WikiService(apiClient);
-        HealthService healthService = new HealthService(envConfig, storage, leaderboardService, hiscoreClient);
+        HealthService healthService = new HealthService(envConfig, storage, leaderboardService, hiscoreClient, apiClient);
         AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService, wikiService, apiClient);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
@@ -133,8 +133,12 @@ public class BotApp {
                                         new SubcommandData("unlink", "Unlink your Old School RuneScape username"),
                                         new SubcommandData("stats", "Show your current level and gains since the last leaderboard")
                                                 .addOptions(skillOption),
+                                        new SubcommandData("questlookup", "Look up a quest and get details or an AI checklist")
+                                                .addOption(OptionType.STRING, "quest_name", "The name of the quest", true),
                                         new SubcommandData("pricelookup", "Look up the current G.E. price of an item")
-                                                .addOption(OptionType.STRING, "item", "The name of the item", true)
+                                                .addOption(OptionType.STRING, "item", "The name of the item", true),
+                                        new SubcommandData("wikilookup", "Search the OSRS Wiki for a link")
+                                                .addOption(OptionType.STRING, "search", "The term to search for", true)
                                 )
                                 .addSubcommandGroups(
                                         new SubcommandGroupData("compare", "Compare items or skills")

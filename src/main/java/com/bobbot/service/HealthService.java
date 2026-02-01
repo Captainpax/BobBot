@@ -4,6 +4,7 @@ import com.bobbot.config.EnvConfig;
 import com.bobbot.discord.BotStatus;
 import com.bobbot.discord.DiscordFormatUtils;
 import com.bobbot.osrs.HiscoreClient;
+import com.bobbot.osrs.OsrsApiClient;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
 import com.bobbot.storage.PlayerRecord;
@@ -35,6 +36,7 @@ public class HealthService {
     private final JsonStorage storage;
     private final LeaderboardService leaderboardService;
     private final HiscoreClient hiscoreClient;
+    private final OsrsApiClient apiClient;
     private final Map<String, AiExecutionLog> thoughtCache = Collections.synchronizedMap(new LinkedHashMap<String, AiExecutionLog>(100, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, AiExecutionLog> eldest) {
@@ -51,13 +53,15 @@ public class HealthService {
      * @param storage storage layer
      * @param leaderboardService leaderboard service
      * @param hiscoreClient hiscore client
+     * @param apiClient OSRS API client
      */
-    public HealthService(EnvConfig envConfig, JsonStorage storage, LeaderboardService leaderboardService, HiscoreClient hiscoreClient) {
+    public HealthService(EnvConfig envConfig, JsonStorage storage, LeaderboardService leaderboardService, HiscoreClient hiscoreClient, OsrsApiClient apiClient) {
         this.startedAt = Instant.now();
         this.envConfig = envConfig;
         this.storage = storage;
         this.leaderboardService = leaderboardService;
         this.hiscoreClient = hiscoreClient;
+        this.apiClient = apiClient;
     }
 
     /**
@@ -84,8 +88,10 @@ public class HealthService {
         builder.append("- bot status: ").append(data.botStatus()).append("\n");
         builder.append("- discord status: ").append(data.discordStatus()).append("\n");
         builder.append("- discord ping: ").append(data.discordPing()).append("ms").append("\n");
-        builder.append("- osrs status: ").append(data.osrsStatus()).append("\n");
-        builder.append("- osrs ping: ").append(data.osrsPing()).append("ms").append("\n");
+        builder.append("- osrs-api status: ").append(data.apiStatus()).append("\n");
+        builder.append("- osrs-api ping: ").append(data.apiPing()).append("ms").append("\n");
+        builder.append("- osrs hiscore status: ").append(data.osrsStatus()).append("\n");
+        builder.append("- osrs hiscore ping: ").append(data.osrsPing()).append("ms").append("\n");
         builder.append("- uptime: ").append(FormatUtils.formatDuration(data.uptime())).append("\n");
         builder.append("- guilds: ").append(data.guildCount()).append("\n");
         builder.append("- linked players: ").append(data.playerCount()).append("\n");
@@ -128,8 +134,8 @@ public class HealthService {
                             data.environment(), data.botStatus(), FormatUtils.formatDuration(data.uptime())), true);
 
             eb.addField("🌐 Connectivity",
-                    String.format("Discord: `%s` (%dms)\nOSRS: `%s` (%dms)",
-                            data.discordStatus(), data.discordPing(), data.osrsStatus(), data.osrsPing()), true);
+                    String.format("Discord: `%s` (%dms)\nAPI: `%s` (%dms)\nHiscores: `%s` (%dms)",
+                            data.discordStatus(), data.discordPing(), data.apiStatus(), data.apiPing(), data.osrsStatus(), data.osrsPing()), true);
 
             eb.addField("📊 Statistics",
                     String.format("Guilds: `%d`\nPlayers: `%d`\nAdmins: `%d`\nTop XP: `%s`",
@@ -164,7 +170,8 @@ public class HealthService {
                 case "connectivity" -> {
                     eb.addField("🌐 Discord", String.format("**Status:** `%s`\n**Ping:** `%dms`", data.discordStatus(), data.discordPing()), true);
                     eb.addField("🛠️ Gateway", String.format("**Ping:** `%dms`", data.discordPing()), true);
-                    eb.addField("⚔️ OSRS API", String.format("**Status:** `%s`\n**Ping:** `%dms`", data.osrsStatus(), data.osrsPing()), true);
+                    eb.addField("🚀 OSRS API", String.format("**Status:** `%s`\n**Ping:** `%dms`", data.apiStatus(), data.apiPing()), true);
+                    eb.addField("⚔️ OSRS Hiscores", String.format("**Status:** `%s`\n**Ping:** `%dms`", data.osrsStatus(), data.osrsPing()), true);
                 }
                 case "statistics" -> {
                     eb.addField("🏰 Guilds", String.format("`%d`", data.guildCount()), true);
@@ -206,6 +213,7 @@ public class HealthService {
     public HealthData getHealthData(JDA jda) {
         BotSettings settings = storage.loadSettings();
         OsrsStatus osrsStatus = fetchOsrsStatus();
+        OsrsApiClient.ApiHealth apiHealth = apiClient.fetchApiHealth();
         String environment = envConfig.environment();
         if (environment == null || environment.isBlank()) {
             environment = settings.getEnvironment();
@@ -217,6 +225,8 @@ public class HealthService {
                 jda.getGatewayPing(),
                 osrsStatus.status,
                 osrsStatus.pingMs,
+                apiHealth.status(),
+                apiHealth.pingMs(),
                 Duration.between(startedAt, Instant.now()),
                 jda.getGuilds().size(),
                 storage.loadPlayers().size(),
@@ -239,6 +249,8 @@ public class HealthService {
             long discordPing,
             String osrsStatus,
             long osrsPing,
+            String apiStatus,
+            long apiPing,
             Duration uptime,
             long guildCount,
             int playerCount,

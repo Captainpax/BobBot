@@ -32,6 +32,29 @@ public class OsrsApiClient {
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
+    public record ApiHealth(String status, long pingMs) {}
+
+    public ApiHealth fetchApiHealth() {
+        long start = System.nanoTime();
+        try {
+            String url = baseUrl + "/health";
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long elapsedMs = java.time.Duration.ofNanos(System.nanoTime() - start).toMillis();
+            if (response.statusCode() == 200) {
+                return new ApiHealth("ok", elapsedMs);
+            }
+            return new ApiHealth("error (" + response.statusCode() + ")", elapsedMs);
+        } catch (Exception e) {
+            long elapsedMs = java.time.Duration.ofNanos(System.nanoTime() - start).toMillis();
+            return new ApiHealth("error", elapsedMs);
+        }
+    }
+
     public List<SkillStat> fetchPlayerStats(String username) throws IOException, InterruptedException {
         String url = baseUrl + "/api/player/" + username.replace(" ", "%20");
         HttpRequest request = HttpRequest.newBuilder()
@@ -47,13 +70,20 @@ public class OsrsApiClient {
             throw new IOException("OSRS API lookup failed with status " + response.statusCode());
         }
 
+        LOGGER.debug("OSRS API response for {}: {}", username, response.body());
+
         JsonNode root = objectMapper.readTree(response.body());
         List<SkillStat> stats = new ArrayList<>();
         
-        // osrs-json-hiscores returns an object where keys are skill names
-        if (root.has("main")) {
-            JsonNode skills = root.get("main").get("skills");
-            Iterator<Map.Entry<String, JsonNode>> fields = skills.fields();
+        JsonNode skillsNode = null;
+        if (root.has("main") && root.get("main").has("skills")) {
+            skillsNode = root.get("main").get("skills");
+        } else if (root.has("skills")) {
+            skillsNode = root.get("skills");
+        }
+        
+        if (skillsNode != null && skillsNode.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = skillsNode.fields();
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> entry = fields.next();
                 String skillName = entry.getKey();
@@ -67,6 +97,11 @@ public class OsrsApiClient {
                 }
             }
         }
+
+        if (stats.isEmpty()) {
+            LOGGER.warn("No skills parsed for player {} from API response", username);
+        }
+
         return stats;
     }
 
@@ -104,6 +139,44 @@ public class OsrsApiClient {
             return Optional.of(objectMapper.readTree(response.body()));
         } catch (Exception e) {
             LOGGER.error("Failed to fetch wiki summary for {}", title, e);
+            return Optional.empty();
+        }
+    }
+
+    public Optional<JsonNode> fetchWikiGuide(String title) {
+        try {
+            String url = baseUrl + "/api/wiki/guide/" + title.replace(" ", "%20");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return Optional.empty();
+            }
+            return Optional.of(objectMapper.readTree(response.body()));
+        } catch (Exception e) {
+            LOGGER.error("Failed to fetch wiki guide for {}", title, e);
+            return Optional.empty();
+        }
+    }
+
+    public Optional<JsonNode> searchWiki(String query) {
+        try {
+            String url = baseUrl + "/api/wiki/search/" + query.replace(" ", "%20");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return Optional.empty();
+            }
+            return Optional.of(objectMapper.readTree(response.body()));
+        } catch (Exception e) {
+            LOGGER.error("Failed to search wiki for {}", query, e);
             return Optional.empty();
         }
     }

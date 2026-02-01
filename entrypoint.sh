@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# Start Node.js API in background
+echo "Starting OSRS API..."
+node /app/osrs-api/dist/index.js &
+
 # Wrapper script to handle bot restarts without killing the Docker container.
 # Exit code 2 means the bot wants to restart.
 # Exit code 0 means the bot wants to shut down.

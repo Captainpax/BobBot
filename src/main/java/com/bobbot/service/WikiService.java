@@ -26,9 +26,19 @@ public class WikiService {
      * @return the wiki URL
      */
     public String getWikiUrl(Skill skill) {
-        return apiClient.fetchWikiSummary(skill.displayName())
+        return getWikiUrl(skill.displayName());
+    }
+
+    /**
+     * Get the Wiki URL for a given title.
+     *
+     * @param title the page title
+     * @return the wiki URL
+     */
+    public String getWikiUrl(String title) {
+        return apiClient.fetchWikiSummary(title)
                 .map(node -> node.path("url").asText())
-                .orElse("https://oldschool.runescape.wiki/w/" + skill.displayName().replace(" ", "_"));
+                .orElse("https://oldschool.runescape.wiki/w/" + title.replace(" ", "_"));
     }
 
     /**
@@ -41,5 +51,37 @@ public class WikiService {
         return apiClient.fetchWikiSummary(skill.displayName())
                 .map(node -> node.path("summary").asText())
                 .filter(s -> !s.isBlank());
+    }
+
+    /**
+     * Fetch a full guide/extract for a given title from the OSRS Wiki.
+     *
+     * @param title the page title
+     * @return an optional guide string
+     */
+    public Optional<String> getWikiGuide(String title) {
+        return apiClient.fetchWikiGuide(title)
+                .map(node -> node.path("guide").asText())
+                .filter(s -> !s.isBlank());
+    }
+
+    /**
+     * Fetch quest info from the OSRS API.
+     *
+     * @param questName name of the quest
+     * @return optional quest info JSON
+     */
+    public Optional<JsonNode> fetchQuestInfo(String questName) {
+        return apiClient.fetchQuestInfo(questName);
+    }
+
+    /**
+     * Search the wiki for a given query.
+     *
+     * @param query search query
+     * @return optional search result JSON
+     */
+    public Optional<JsonNode> searchWiki(String query) {
+        return apiClient.searchWiki(query);
     }
 }

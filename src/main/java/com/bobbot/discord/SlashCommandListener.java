@@ -14,13 +14,13 @@ import com.bobbot.service.PriceService;
 import com.bobbot.service.RoleService;
 import com.bobbot.service.WikiService;
 import com.bobbot.storage.PlayerRecord;
-import com.bobbot.util.FormatUtils;
+import com.fasterxml.jackson.databind.JsonNode;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import net.dv8tion.jda.api.entities.emoji.Emoji;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -34,11 +34,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -160,7 +160,9 @@ public class SlashCommandListener extends ListenerAdapter {
                     case "link" -> handleLink(event);
                     case "unlink" -> handleUnlink(event);
                     case "stats" -> handleStats(event);
+                    case "questlookup" -> handleQuestLookup(event);
                     case "pricelookup" -> handlePriceLookup(event);
+                    case "wikilookup" -> handleWikiLookup(event);
                     default -> {
                         LOGGER.debug("Unknown OS subcommand '{}'", subcommand);
                         event.reply("Unknown subcommand.").setEphemeral(true).queue();
@@ -431,6 +433,137 @@ public class SlashCommandListener extends ListenerAdapter {
     }
 
     /**
+     * Handle the /os questlookup command.
+     *
+     * @param event slash command event
+     */
+    private void handleQuestLookup(SlashCommandInteractionEvent event) {
+        String questName = getRequiredOption(event, "quest_name");
+        if (questName == null) return;
+        event.deferReply().queue();
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                var questInfoOpt = wikiService.fetchQuestInfo(questName);
+                if (questInfoOpt.isEmpty()) {
+                    event.getHook().sendMessage("I couldn't find any details for a quest named '" + questName + "'. Check your spelling, mate.").queue();
+                    return;
+                }
+
+                JsonNode questData = questInfoOpt.get();
+                String canonicalName = questData.path("name").asText();
+                String wikiUrl = wikiService.getWikiUrl(canonicalName);
+
+                // Create pagination session (3 pages: Overview, Requirements, Rewards)
+                Map<String, String> metadata = new HashMap<>();
+                metadata.put("type", "quest");
+                metadata.put("questName", canonicalName);
+                metadata.put("wikiUrl", wikiUrl);
+
+                // We use dummy pages list since we build embeds manually
+                String sessionId = paginationService.createSession(canonicalName, "", List.of("p1", "p2", "p3"), 1, metadata);
+
+                event.getHook().sendMessageEmbeds(createQuestEmbed(event.getJDA(), questData, 0))
+                        .setComponents(createQuestButtons(sessionId, 0, 3, wikiUrl))
+                        .queue();
+
+            } catch (Exception e) {
+                LOGGER.error("Failed to handle questlookup for {}", questName, e);
+                event.getHook().sendMessage("Something went wrong while consulting the wiki, mate. Blame the server lag.").queue();
+            }
+        });
+    }
+
+    private MessageEmbed createQuestEmbed(JDA jda, JsonNode questData, int page) {
+        String name = questData.path("name").asText("Unknown Quest");
+        EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
+                .setTitle("📜 Quest: " + name);
+
+        if (page == 0) { // Overview
+            eb.addField("Difficulty", questData.path("difficulty").asText("Unknown"), true);
+            eb.addField("Length", questData.path("length").asText("Unknown"), true);
+            eb.addField("Quest Points", questData.path("questPoints").asText("0"), true);
+            if (questData.has("series") && !questData.path("series").asText().isEmpty()) {
+                eb.addField("Series", questData.path("series").asText(), true);
+            }
+        } else if (page == 1) { // Requirements
+            StringBuilder skills = new StringBuilder();
+            JsonNode reqSkills = questData.path("requirements").path("skills");
+            if (reqSkills.isArray() && reqSkills.size() > 0) {
+                for (JsonNode req : reqSkills) {
+                    skills.append("• ").append(req.path("level").asInt())
+                            .append(" ").append(req.path("skill").asText());
+                    if (req.path("boostable").asBoolean()) {
+                        skills.append(" (b)");
+                    }
+                    skills.append("\n");
+                }
+            } else {
+                skills.append("None");
+            }
+            eb.addField("Skill Requirements", skills.toString(), false);
+
+            StringBuilder quests = new StringBuilder();
+            JsonNode reqQuests = questData.path("requirements").path("quests");
+            if (reqQuests.isArray() && reqQuests.size() > 0) {
+                for (JsonNode req : reqQuests) {
+                    quests.append("• ").append(req.asText()).append("\n");
+                }
+            } else {
+                quests.append("None");
+            }
+            eb.addField("Quest Requirements", quests.toString(), false);
+        } else if (page == 2) { // Rewards
+            StringBuilder rewards = new StringBuilder();
+            JsonNode expRewards = questData.path("rewards").path("experience");
+            if (expRewards.isArray() && expRewards.size() > 0) {
+                for (JsonNode req : expRewards) {
+                    rewards.append("• ").append(String.format("%,d", req.path("amount").asInt()))
+                            .append(" ").append(req.path("skill").asText()).append(" XP\n");
+                }
+            }
+
+            JsonNode itemRewards = questData.path("rewards").path("items");
+            if (itemRewards.isArray() && itemRewards.size() > 0) {
+                for (JsonNode item : itemRewards) {
+                    rewards.append("• ").append(item.asText()).append("\n");
+                }
+            }
+
+            JsonNode unlocks = questData.path("rewards").path("unlocks");
+            if (unlocks.isArray() && unlocks.size() > 0) {
+                for (JsonNode unlock : unlocks) {
+                    rewards.append("• ").append(unlock.asText()).append("\n");
+                }
+            }
+
+            if (rewards.length() == 0) rewards.append("None");
+            eb.addField("Rewards", rewards.toString(), false);
+        }
+
+        eb.setFooter(String.format("Page %d/3 | BobBot v0.1.0", page + 1));
+        return eb.build();
+    }
+
+    private List<ActionRow> createQuestButtons(String sessionId, int currentPage, int totalPages, String wikiUrl) {
+        List<Button> navButtons = new java.util.ArrayList<>();
+        navButtons.add(Button.primary("quest:page:prev:" + sessionId, "Previous")
+                .withEmoji(Emoji.fromFormatted("⬅️"))
+                .withDisabled(currentPage == 0));
+        navButtons.add(Button.primary("quest:page:next:" + sessionId, "Next")
+                .withEmoji(Emoji.fromFormatted("➡️"))
+                .withDisabled(currentPage >= totalPages - 1));
+
+        List<Button> actionButtons = new java.util.ArrayList<>();
+        actionButtons.add(Button.link(wikiUrl, "Wiki")
+                .withEmoji(Emoji.fromFormatted("🌐")));
+        actionButtons.add(Button.success("quest:ai_explain:" + sessionId, "AI Explain")
+                .withEmoji(Emoji.fromFormatted("🤖")));
+
+        return List.of(ActionRow.of(navButtons), ActionRow.of(actionButtons));
+    }
+
+    /**
      * Handle the /os pricelookup command.
      *
      * @param event slash command event
@@ -465,6 +598,44 @@ public class SlashCommandListener extends ListenerAdapter {
             LOGGER.error("Price lookup failed for query '{}'", itemQuery, e);
             event.getHook().sendMessage("Failed to fetch price data. Please try again later.").queue();
         }
+    }
+
+    /**
+     * Handle the /os wikilookup command.
+     *
+     * @param event slash command event
+     */
+    private void handleWikiLookup(SlashCommandInteractionEvent event) {
+        String query = getRequiredOption(event, "search");
+        if (query == null) return;
+        event.deferReply().queue();
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                var searchResultOpt = wikiService.searchWiki(query);
+                if (searchResultOpt.isEmpty()) {
+                    event.getHook().sendMessage("I couldn't find anything on the wiki for '" + query + "'. Maybe try a different search?").queue();
+                    return;
+                }
+
+                JsonNode result = searchResultOpt.get();
+                String title = result.path("title").asText();
+                String url = result.path("url").asText();
+                String summary = result.path("summary").asText("No summary available.");
+
+                MessageEmbed embed = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                        .setTitle("📖 Wiki Search: " + title, url)
+                        .setDescription(summary)
+                        .addField("Wiki Link", "[Click here to view the full page](" + url + ")", false)
+                        .build();
+
+                event.getHook().sendMessageEmbeds(embed).queue();
+
+            } catch (Exception e) {
+                LOGGER.error("Failed to handle wikilookup for {}", query, e);
+                event.getHook().sendMessage("Something went wrong while searching the wiki. Try again later, mate.").queue();
+            }
+        });
     }
 
     private void handleComparePrice(SlashCommandInteractionEvent event) {
@@ -911,7 +1082,96 @@ public class SlashCommandListener extends ListenerAdapter {
                     .queue();
         } else if (componentId.startsWith("ai:page:")) {
             handleAiPageButton(event);
+        } else if (componentId.startsWith("quest:page:")) {
+            handleQuestPageButton(event);
+        } else if (componentId.startsWith("quest:ai_explain:")) {
+            handleQuestAiExplainButton(event);
         }
+    }
+
+    private void handleQuestPageButton(ButtonInteractionEvent event) {
+        String componentId = event.getComponentId();
+        String[] parts = componentId.split(":");
+        if (parts.length < 4) return;
+
+        String action = parts[2];
+        String sessionId = parts[3];
+
+        PaginationService.PagedSession session = paginationService.getSession(sessionId);
+        if (session == null) {
+            event.reply("This quest session has expired, mate. Try looking it up again.").setEphemeral(true).queue();
+            return;
+        }
+
+        int newPage = session.currentPage();
+        if ("next".equals(action)) {
+            newPage++;
+        } else if ("prev".equals(action)) {
+            newPage--;
+        }
+
+        if (newPage < 0 || newPage >= 3) { // Quest has 3 pages
+            event.deferEdit().queue();
+            return;
+        }
+
+        paginationService.updateSessionPage(sessionId, newPage);
+        String questName = session.metadata().get("questName");
+        String wikiUrl = session.metadata().get("wikiUrl");
+
+        var questInfoOpt = wikiService.fetchQuestInfo(questName);
+        if (questInfoOpt.isEmpty()) {
+            event.reply("Failed to refresh quest data. Try again later.").setEphemeral(true).queue();
+            return;
+        }
+
+        event.editMessageEmbeds(createQuestEmbed(event.getJDA(), questInfoOpt.get(), newPage))
+                .setComponents(createQuestButtons(sessionId, newPage, 3, wikiUrl))
+                .queue();
+    }
+
+    private void handleQuestAiExplainButton(ButtonInteractionEvent event) {
+        String componentId = event.getComponentId();
+        String[] parts = componentId.split(":");
+        if (parts.length < 3) return;
+
+        String sessionId = parts[2];
+        PaginationService.PagedSession session = paginationService.getSession(sessionId);
+        if (session == null) {
+            event.reply("This session has expired, mate.").setEphemeral(true).queue();
+            return;
+        }
+
+        String questName = session.metadata().get("questName");
+        String wikiUrl = session.metadata().get("wikiUrl");
+
+        event.deferReply().queue();
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Optional<String> guide = wikiService.getWikiGuide(questName);
+                if (guide.isEmpty()) {
+                    event.getHook().sendMessage("I couldn't find an AI-friendly guide for this quest on the wiki.").queue();
+                    return;
+                }
+
+                String prompt = String.format("Generate a concise step-by-step checklist for completing the OSRS quest '%s' based on this wiki information:\n\n%s\n\nAlso mention the wiki URL: %s",
+                        questName, guide.get(), wikiUrl);
+
+                AiService.AiResult result = aiService.generateResponse(prompt, event.getUser().getId(), event.getChannel().getId(), event.isFromGuild() ? event.getGuild().getId() : null, null);
+
+                EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(event.getJDA())
+                        .setTitle("🤖 AI Quest Checklist: " + questName)
+                        .setDescription(result.content().length() > 4000 ? result.content().substring(0, 3997) + "..." : result.content())
+                        .setFooter("Wiki: " + wikiUrl);
+
+                event.getHook().sendMessageEmbeds(eb.build()).queue();
+
+            } catch (Exception e) {
+                LOGGER.error("Failed to generate AI explanation for {}", questName, e);
+                event.getHook().sendMessage("Failed to consult the spirits for an explanation. Try again later.").queue();
+            }
+        });
     }
 
     private void handleAiPageButton(ButtonInteractionEvent event) {
