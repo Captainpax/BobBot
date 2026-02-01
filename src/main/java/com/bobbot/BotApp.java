@@ -16,6 +16,7 @@ import com.bobbot.service.LevelUpService;
 import com.bobbot.service.PaginationService;
 import com.bobbot.service.PriceService;
 import com.bobbot.service.RoleService;
+import com.bobbot.service.WikiService;
 import com.bobbot.storage.JsonStorage;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -60,8 +61,9 @@ public class BotApp {
         RoleService roleService = new RoleService();
         ConfigService configService = new ConfigService();
         PaginationService paginationService = new PaginationService();
+        WikiService wikiService = new WikiService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
-        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService);
+        AiService aiService = new AiService(storage, envConfig.dataDirectory(), priceService, levelUpService, leaderboardService, healthService, paginationService, wikiService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
 
@@ -81,7 +83,7 @@ public class BotApp {
                     .setActivity(Activity.playing("OSRS levels"))
                     .setEventPool(eventPool)
                     .addEventListeners(
-                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService, paginationService),
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService, paginationService, wikiService),
                             new ReadyNotificationListener(envConfig, healthService),
                             new MentionHealthListener(healthService),
                             new AiMessageListener(storage, aiService, healthService, paginationService),
@@ -137,6 +139,15 @@ public class BotApp {
                                                                         new OptionData(OptionType.STRING, "skill1", "First skill", true, true),
                                                                         new OptionData(OptionType.STRING, "skill2", "Second skill", true, true)
                                                                 )
+                                        ),
+                                        new SubcommandGroupData("toggle", "Toggle your player settings")
+                                                .addSubcommands(
+                                                        new SubcommandData("ping", "Toggle pings for OSRS notifications")
+                                                                .addOptions(
+                                                                        new OptionData(OptionType.STRING, "type", "Notification type", true)
+                                                                                .addChoice("Leaderboard", "leaderboard")
+                                                                                .addChoice("Level Up", "levelup")
+                                                                )
                                                 )
                                 ),
                         Commands.slash("admin", "Administrative commands")
@@ -163,7 +174,9 @@ public class BotApp {
                                                         new SubcommandData("bobschat", "Main channel for Bob's pings")
                                                                 .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true),
                                                         new SubcommandData("leaderboard", "Set the channel for leaderboard posts")
-                                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true)
+                                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true),
+                                                        new SubcommandData("adminrole", "Set the custom admin role ID")
+                                                                .addOption(OptionType.STRING, "role_id", "Discord role ID", true)
                                                 ),
                                         new SubcommandGroupData("ai", "AI configuration")
                                                 .addSubcommands(

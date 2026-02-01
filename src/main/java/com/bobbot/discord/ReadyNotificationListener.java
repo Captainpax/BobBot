@@ -37,6 +37,7 @@ public class ReadyNotificationListener extends ListenerAdapter {
             return;
         }
         JDA jda = event.getJDA();
+        healthService.announceToBobsChat(jda, "Just logged in at the GE. Did I miss a drop, legends?");
 
         MessageEmbed embed = healthService.buildHealthEmbed(jda, "all");
 

@@ -10,7 +10,9 @@ import com.bobbot.storage.PlayerRecord;
 import com.bobbot.util.FormatUtils;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.MessageEmbed;
+import net.dv8tion.jda.api.entities.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -364,8 +366,6 @@ public class HealthService {
      * @param thinking the thinking log
      */
     public void sendThoughtsToUser(JDA jda, net.dv8tion.jda.api.entities.User targetUser, net.dv8tion.jda.api.entities.User author, String prompt, String thinking) {
-        if (!isAdmin(targetUser.getId())) return;
-
         targetUser.openPrivateChannel().queue(channel -> {
             EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
                     .setTitle("🤖 AI Thought Breakdown (On-demand)")
@@ -417,6 +417,88 @@ public class HealthService {
         }
         storage.saveSettings(settings.withThoughtRecipientIds(recipients));
         return enabled;
+    }
+
+    /**
+     * Send a message to the configured Bob's chat channel.
+     *
+     * @param jda active JDA client
+     * @param message message to send
+     */
+    public void announceToBobsChat(JDA jda, String message) {
+        if (jda == null || message == null || message.isBlank()) return;
+        
+        BotSettings settings = storage.loadSettings();
+        String channelId = settings.getBobsChatChannelId();
+        if (channelId == null || channelId.isBlank()) {
+            LOGGER.debug("Bob's chat channel not configured; skipping announcement: {}", message);
+            return;
+        }
+
+        net.dv8tion.jda.api.entities.channel.middleman.MessageChannel channel = jda.getChannelById(net.dv8tion.jda.api.entities.channel.middleman.MessageChannel.class, channelId);
+        if (channel != null) {
+            channel.sendMessage(message).queue(
+                s -> LOGGER.info("Sent announcement to Bob's chat: {}", message),
+                f -> LOGGER.warn("Failed to send announcement to Bob's chat", f)
+            );
+        } else {
+            LOGGER.warn("Could not find Bob's chat channel with ID: {}", channelId);
+        }
+    }
+
+    /**
+     * Send a message to the configured Bob's chat channel and wait for it to be sent.
+     * Useful during shutdown.
+     *
+     * @param jda active JDA client
+     * @param message message to send
+     */
+    public void announceToBobsChatBlocking(JDA jda, String message) {
+        if (jda == null || message == null || message.isBlank()) return;
+        
+        BotSettings settings = storage.loadSettings();
+        String channelId = settings.getBobsChatChannelId();
+        if (channelId == null || channelId.isBlank()) return;
+
+        net.dv8tion.jda.api.entities.channel.middleman.MessageChannel channel = jda.getChannelById(net.dv8tion.jda.api.entities.channel.middleman.MessageChannel.class, channelId);
+        if (channel != null) {
+            try {
+                channel.sendMessage(message).complete();
+                LOGGER.info("Sent blocking announcement to Bob's chat: {}", message);
+            } catch (Exception e) {
+                LOGGER.warn("Failed to send blocking announcement to Bob's chat", e);
+            }
+        }
+    }
+
+    /**
+     * Check if a member is an admin (superuser, in admin list, or has an admin role).
+     *
+     * @param member Discord guild member
+     * @return true if admin
+     */
+    public boolean isAdmin(Member member) {
+        if (member == null) return false;
+        if (isAdmin(member.getUser().getId())) return true;
+        
+        BotSettings settings = storage.loadSettings();
+        String customAdminRoleId = settings.getAdminRoleId();
+        
+        return member.getRoles().stream()
+                .anyMatch(role -> role.getName().equalsIgnoreCase(RoleService.ADMIN_ROLE_NAME) 
+                        || (customAdminRoleId != null && role.getId().equals(customAdminRoleId)));
+    }
+
+    /**
+     * Update and persist the custom admin role ID.
+     *
+     * @param roleId role ID
+     * @return updated role ID
+     */
+    public String updateAdminRole(String roleId) {
+        BotSettings settings = storage.loadSettings();
+        storage.saveSettings(settings.withAdminRoleId(roleId));
+        return roleId;
     }
 
     /**

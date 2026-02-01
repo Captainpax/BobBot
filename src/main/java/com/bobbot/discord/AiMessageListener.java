@@ -68,7 +68,8 @@ public class AiMessageListener extends ListenerAdapter {
         }
 
         // Handle on-demand thought request
-        if (isReplyToMe && referencedMessageId != null && healthService.isAdmin(event.getAuthor().getId())) {
+        boolean isAuthorAdmin = event.getMember() != null ? healthService.isAdmin(event.getMember()) : healthService.isAdmin(event.getAuthor().getId());
+        if (isReplyToMe && referencedMessageId != null && isAuthorAdmin) {
             String lower = content.toLowerCase();
             if (lower.contains("thoughts") || lower.contains("breakdown") || lower.contains("thinking") || lower.contains("tools")) {
                 HealthService.AiExecutionLog log = healthService.getCachedThought(referencedMessageId);
@@ -79,8 +80,10 @@ public class AiMessageListener extends ListenerAdapter {
                         healthService.sendThoughtsToUser(event.getJDA(), event.getAuthor(), event.getAuthor(), log.prompt(), log.thinking());
                     });
                     event.getMessage().reply("Sent my thoughts on that one to your DMs, mate. Don't go sharing my trade secrets!").queue();
-                    return;
+                } else {
+                    event.getMessage().reply("I don't have any recorded thoughts for that one, mate. I probably wasn't using any tools or my memory is a bit foggy (cache missed).").queue();
                 }
+                return;
             }
         }
 

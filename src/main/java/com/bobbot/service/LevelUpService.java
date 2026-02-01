@@ -3,6 +3,7 @@ package com.bobbot.service;
 import com.bobbot.config.EnvConfig;
 import com.bobbot.discord.DiscordFormatUtils;
 import com.bobbot.osrs.HiscoreClient;
+import com.bobbot.osrs.OsrsXpTable;
 import com.bobbot.osrs.SkillStat;
 import com.bobbot.storage.BotSettings;
 import com.bobbot.storage.JsonStorage;
@@ -53,10 +54,22 @@ public class LevelUpService {
      */
     public PlayerRecord linkPlayer(String discordUserId, String username) throws IOException, InterruptedException {
         Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
-        SkillStat overall = hiscoreClient.fetchOverallStat(username);
+        List<SkillStat> stats = hiscoreClient.fetchSkillStats(username);
+        SkillStat overall = stats.stream()
+                .filter(s -> s.skill().isOverall())
+                .findFirst()
+                .orElseThrow(() -> new IOException("Overall stat missing"));
+
+        Map<String, Integer> skillLevels = new HashMap<>();
+        for (SkillStat stat : stats) {
+            if (!stat.skill().isOverall()) {
+                skillLevels.put(stat.skill().name(), stat.level());
+            }
+        }
+
         Instant snapshotTime = Instant.now();
         PlayerRecord updated = new PlayerRecord(username, overall.level(), overall.xp(), snapshotTime, null,
-                overall.level(), overall.xp(), snapshotTime);
+                overall.level(), overall.xp(), snapshotTime, skillLevels, true, true);
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;
@@ -79,6 +92,34 @@ public class LevelUpService {
     }
 
     /**
+     * Toggle a notification ping setting for a player.
+     *
+     * @param discordUserId Discord user ID
+     * @param type "leaderboard" or "levelup"
+     * @return updated player record, or null if not linked
+     */
+    public PlayerRecord togglePing(String discordUserId, String type) {
+        Map<String, PlayerRecord> players = new HashMap<>(storage.loadPlayers());
+        PlayerRecord record = players.get(discordUserId);
+        if (record == null) {
+            return null;
+        }
+
+        PlayerRecord updated;
+        if ("leaderboard".equals(type)) {
+            updated = record.withPingOnLeaderboard(!record.isPingOnLeaderboard());
+        } else if ("levelup".equals(type)) {
+            updated = record.withPingOnLevelUp(!record.isPingOnLevelUp());
+        } else {
+            return null;
+        }
+
+        players.put(discordUserId, updated);
+        storage.savePlayers(players);
+        return updated;
+    }
+
+    /**
      * Scan all linked players for total level increases and announce changes.
      *
      * @param jda active JDA client
@@ -89,29 +130,57 @@ public class LevelUpService {
             return;
         }
         BotSettings settings = storage.loadSettings();
-        MessageChannel leaderboardChannel = resolveChannel(jda, settings.getLeaderboardChannelId());
         MessageChannel bobsChatChannel = resolveChannel(jda, settings.getBobsChatChannelId());
         Map<String, PlayerRecord> updated = new HashMap<>(players);
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
             String discordUserId = entry.getKey();
             PlayerRecord record = entry.getValue();
             try {
-                SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
-                if (overall.level() > record.getLastTotalLevel()) {
-                    int gained = overall.level() - record.getLastTotalLevel();
-                    updated.put(discordUserId, record.withLevel(overall.level(), overall.xp()));
+                List<SkillStat> stats = hiscoreClient.fetchSkillStats(record.getUsername());
+                SkillStat overall = stats.stream()
+                        .filter(s -> s.skill().isOverall())
+                        .findFirst()
+                        .orElseThrow(() -> new IOException("Overall stat missing"));
 
-                    EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
-                            .setTitle("🎉 Level Up!")
-                            .setDescription(String.format("**%s** gained **+%d** total levels!", record.getUsername(), gained))
-                            .addField("New Total Level", String.valueOf(overall.level()), true);
+                boolean levelIncreased = overall.level() > record.getLastTotalLevel();
+                boolean firstTimeStats = record.getSkillLevels().isEmpty();
 
-                    if (leaderboardChannel != null) {
-                        leaderboardChannel.sendMessageEmbeds(eb.build()).queue();
+                if (levelIncreased || firstTimeStats) {
+                    Map<String, Integer> currentSkillLevels = new HashMap<>();
+                    List<String> skillUps = new ArrayList<>();
+
+                    for (SkillStat stat : stats) {
+                        if (stat.skill().isOverall()) continue;
+                        String skillName = stat.skill().name();
+                        int currentLevel = stat.level();
+                        currentSkillLevels.put(skillName, currentLevel);
+
+                        Integer lastLevel = record.getSkillLevels().get(skillName);
+                        if (lastLevel != null && currentLevel > lastLevel) {
+                            long xpToNext = OsrsXpTable.xpToNextLevel(currentLevel, stat.xp());
+                            String xpInfo = xpToNext > 0
+                                    ? String.format(" (%,d XP until %d)", xpToNext, currentLevel + 1)
+                                    : " (Max Level!)";
+                            skillUps.add(String.format("- **%s**: %d -> **%d**%s",
+                                    stat.skill().displayName(), lastLevel, currentLevel, xpInfo));
+                        }
                     }
 
-                    if (bobsChatChannel != null) {
-                        String pingContent = String.format("<@%s> GZ on the level up!", discordUserId);
+                    updated.put(discordUserId, record.withLevel(overall.level(), overall.xp(), currentSkillLevels));
+
+                    if (levelIncreased && bobsChatChannel != null) {
+                        int totalGained = overall.level() - record.getLastTotalLevel();
+                        EmbedBuilder eb = DiscordFormatUtils.createBobEmbed(jda)
+                                .setTitle("🎉 Level Up!")
+                                .setDescription(String.format("**%s** gained **+%d** total levels!", record.getUsername(), totalGained))
+                                .addField("New Total Level", String.valueOf(overall.level()), true);
+
+                        if (!skillUps.isEmpty()) {
+                            eb.addField("Skills Gained", String.join("\n", skillUps), false);
+                        }
+                        
+                        String mention = record.isPingOnLevelUp() ? String.format("<@%s>", discordUserId) : "**" + record.getUsername() + "**";
+                        String pingContent = String.format("%s GZ on the level up!", mention);
                         bobsChatChannel.sendMessage(pingContent).setEmbeds(eb.build()).queue();
                     }
                 } else if (overall.xp() > record.getLastTotalXp()) {
@@ -156,8 +225,20 @@ public class LevelUpService {
         for (Map.Entry<String, PlayerRecord> entry : players.entrySet()) {
             PlayerRecord record = entry.getValue();
             try {
-                SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
-                PlayerRecord newRecord = record.withLevel(overall.level(), overall.xp());
+                List<SkillStat> stats = hiscoreClient.fetchSkillStats(record.getUsername());
+                SkillStat overall = stats.stream()
+                        .filter(s -> s.skill().isOverall())
+                        .findFirst()
+                        .orElseThrow(() -> new IOException("Overall stat missing"));
+
+                Map<String, Integer> skillLevels = new HashMap<>();
+                for (SkillStat stat : stats) {
+                    if (!stat.skill().isOverall()) {
+                        skillLevels.put(stat.skill().name(), stat.level());
+                    }
+                }
+
+                PlayerRecord newRecord = record.withLevel(overall.level(), overall.xp(), skillLevels);
                 updated.put(entry.getKey(), newRecord);
             } catch (IOException | InterruptedException e) {
                 if (e instanceof InterruptedException) {
@@ -184,8 +265,20 @@ public class LevelUpService {
         if (record == null) {
             return null;
         }
-        SkillStat overall = hiscoreClient.fetchOverallStat(record.getUsername());
-        PlayerRecord updated = record.withLevel(overall.level(), overall.xp());
+        List<SkillStat> stats = hiscoreClient.fetchSkillStats(record.getUsername());
+        SkillStat overall = stats.stream()
+                .filter(s -> s.skill().isOverall())
+                .findFirst()
+                .orElseThrow(() -> new IOException("Overall stat missing"));
+
+        Map<String, Integer> skillLevels = new HashMap<>();
+        for (SkillStat stat : stats) {
+            if (!stat.skill().isOverall()) {
+                skillLevels.put(stat.skill().name(), stat.level());
+            }
+        }
+
+        PlayerRecord updated = record.withLevel(overall.level(), overall.xp(), skillLevels);
         players.put(discordUserId, updated);
         storage.savePlayers(players);
         return updated;

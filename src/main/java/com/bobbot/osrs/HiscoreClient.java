@@ -87,9 +87,9 @@ public class HiscoreClient {
             }
             try {
                 stats.add(parseSkillLine(skill, lines[index]));
-            } catch (IOException e) {
-                // If a specific skill line fails to parse (e.g. Activity instead of Skill), skip it
-                // This handles cases like Sailing (index 24) currently pointing to an Activity line
+            } catch (Exception e) {
+                // If a specific skill line fails to parse (e.g. Activity instead of Skill, or non-numeric data), skip it
+                // This handles cases like Sailing (index 24) currently pointing to an Activity line or partial data
             }
         }
         return stats;

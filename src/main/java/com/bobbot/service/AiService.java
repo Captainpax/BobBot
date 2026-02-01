@@ -66,6 +66,7 @@ public class AiService {
     private final LeaderboardService leaderboardService;
     private final HealthService healthService;
     private final PaginationService paginationService;
+    private final WikiService wikiService;
 
     private JDA jda;
     private final Map<String, ChatMemory> memories = new ConcurrentHashMap<>();
@@ -89,7 +90,9 @@ public class AiService {
     private final ChatModelListener thinkingListener = new ChatModelListener() {
         @Override
         public void onResponse(ChatModelResponseContext context) {
+            if (context == null || context.response() == null) return;
             AiMessage aiMessage = context.response().aiMessage();
+            if (aiMessage == null) return;
             
             // 1. Try to capture reasoning via reflection (LangChain4j 0.35+)
             try {
@@ -110,9 +113,12 @@ public class AiService {
             }
 
             // 2. Capture tool calls and check for loops
-            if (aiMessage.hasToolExecutionRequests()) {
+            if (aiMessage.hasToolExecutionRequests() && aiMessage.toolExecutionRequests() != null) {
                 aiMessage.toolExecutionRequests().forEach(request -> {
-                    String key = request.name() + ":" + request.arguments();
+                    if (request == null) return;
+                    String name = request.name() != null ? request.name() : "unknown";
+                    String args = request.arguments() != null ? request.arguments() : "";
+                    String key = name + ":" + args;
                     int count = TOOL_CALL_MAP.get().merge(key, 1, Integer::sum);
                     if (count > 2) {
                         throw new LoopDetectedException("Detected repetitive tool call: " + key);
@@ -120,9 +126,9 @@ public class AiService {
 
                     THINKING_ACCUMULATOR.get()
                         .append("[Tool Call] ")
-                        .append(request.name())
+                        .append(name)
                         .append(" with args: ")
-                        .append(request.arguments())
+                        .append(args)
                         .append("\n");
                 });
             }
@@ -152,25 +158,29 @@ public class AiService {
 
         @Override
         public void onError(dev.langchain4j.model.chat.listener.ChatModelErrorContext context) {
-            // No thinking to capture on error
+            if (context != null && context.error() != null) {
+                LOGGER.warn("AI Model Error: {}", context.error().getMessage());
+                THINKING_ACCUMULATOR.get().append("[Model Error] ").append(context.error().getMessage()).append("\n");
+            }
         }
 
         @Override
         public void onRequest(ChatModelRequestContext context) {
+            if (context == null || context.request() == null || context.request().messages() == null) return;
             context.request().messages().forEach(message -> {
                 if (message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage toolResult) {
                     THINKING_ACCUMULATOR.get()
                         .append("[Tool Result] ")
-                        .append(toolResult.toolName())
+                        .append(toolResult.toolName() != null ? toolResult.toolName() : "unknown")
                         .append(": ")
-                        .append(toolResult.text())
+                        .append(toolResult.text() != null ? toolResult.text() : "null")
                         .append("\n");
                 }
             });
         }
     };
 
-    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService, PaginationService paginationService) {
+    public AiService(JsonStorage storage, Path dataDir, PriceService priceService, LevelUpService levelUpService, LeaderboardService leaderboardService, HealthService healthService, PaginationService paginationService, WikiService wikiService) {
         this.storage = storage;
         this.dataDir = dataDir;
         this.priceService = priceService;
@@ -178,6 +188,7 @@ public class AiService {
         this.leaderboardService = leaderboardService;
         this.healthService = healthService;
         this.paginationService = paginationService;
+        this.wikiService = wikiService;
     }
 
     public void setJda(JDA jda) {
@@ -270,7 +281,7 @@ public class AiService {
                 LOGGER.error("Error in get_player_stats tool", e);
                 String msg = e.getMessage();
                 if (msg != null && msg.contains("not found on OSRS hiscores")) {
-                    return String.format("Player '%s' not found. If this is an OSRS item (like a 'bond'), use the 'get_item_price' tool instead. If it is a skill name, use 'get_my_skill' instead. Do NOT keep trying to look up this name as a player.", username);
+                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. Do NOT keep trying to look up this name as a player.", username);
                 }
                 return "Error fetching stats for " + username + ": " + e.getMessage();
             }
@@ -299,7 +310,12 @@ public class AiService {
                 return stats.stream()
                         .filter(s -> s.skill() == finalSkill)
                         .findFirst()
-                        .map(s -> String.format("Player: %s, Skill: %s, Level: %d, XP: %,d", username, s.skill().displayName(), s.level(), s.xp()))
+                        .map(s -> {
+                            String base = String.format("Player: %s, Skill: %s, Level: %d, XP: %,d", username, s.skill().displayName(), s.level(), s.xp());
+                            String wikiUrl = wikiService.getWikiUrl(s.skill());
+                            String summary = wikiService.getSkillSummary(s.skill()).orElse("");
+                            return base + "\nWiki: " + wikiUrl + (summary.isEmpty() ? "" : "\nSummary: " + summary);
+                        })
                         .orElse("Player '" + username + "' is unranked in " + finalSkill.displayName() + ".");
             } catch (Exception e) {
                 if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
@@ -309,7 +325,7 @@ public class AiService {
                 LOGGER.error("Error in get_player_skill tool", e);
                 String msg = e.getMessage();
                 if (msg != null && msg.contains("not found on OSRS hiscores")) {
-                    return String.format("Player '%s' not found. If this is an OSRS item (like a 'bond'), use the 'get_item_price' tool instead. If it is a skill name, use 'get_my_skill' instead. Do NOT keep trying to look up this name as a player.", username);
+                    return String.format("Player '%s' not found on OSRS hiscores. They might be unranked, have changed their name, or it might not be a valid player name. Do NOT keep trying to look up this name as a player.", username);
                 }
                 return "Error fetching " + skillName + " for " + username + ": " + e.getMessage();
             }
@@ -440,7 +456,10 @@ public class AiService {
             new Thread(() -> {
                 try {
                     Thread.sleep(1000); // Give Bob time to say goodbye
-                    if (jda != null) jda.shutdown();
+                    if (jda != null) {
+                        healthService.announceToBobsChatBlocking(jda, "Logging out to hop worlds. See you in a tick! (Rebooting...)");
+                        jda.shutdown();
+                    }
                     System.exit(2);
                 } catch (Exception e) {
                     LOGGER.error("Failed to reboot via tool", e);
@@ -458,7 +477,10 @@ public class AiService {
             new Thread(() -> {
                 try {
                     Thread.sleep(1000); // Give Bob time to say goodbye
-                    if (jda != null) jda.shutdown();
+                    if (jda != null) {
+                        healthService.announceToBobsChatBlocking(jda, "World DC incoming! Bracing for impact... (Shutting down...)");
+                        jda.shutdown();
+                    }
                     System.exit(0);
                 } catch (Exception e) {
                     LOGGER.error("Failed to stop via tool", e);
@@ -650,6 +672,9 @@ public class AiService {
                 effectivePrompt = String.format("(Replying to: \"%s\")\n%s", referencedContent, prompt);
             }
             String response = assistantProxy.chat(channelId, systemPrompt, effectivePrompt);
+            if (response == null) {
+                return new AiResult(THINKING_ACCUMULATOR.get().toString().trim(), "I'm sorry, I'm drawing a blank right now. (Model returned no response)", null);
+            }
             
             // Extract thinking from accumulator (collected by listener)
             String thinking = THINKING_ACCUMULATOR.get().toString().trim();
@@ -686,8 +711,9 @@ public class AiService {
             String paginationId = LAST_PAGINATION_ID.get();
             return new AiResult(thinking, cleanContent, paginationId);
         } catch (LoopDetectedException e) {
-            LOGGER.warn("Custom loop detection triggered: {}", e.getMessage());
-            return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
+            String thinking = THINKING_ACCUMULATOR.get().toString().trim();
+            LOGGER.warn("Custom loop detection triggered: {}. Thinking length: {}", e.getMessage(), thinking.length());
+            return new AiResult(thinking, "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
         } catch (Exception e) {
             if (Thread.interrupted() || e instanceof InterruptedException || e.getCause() instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -695,13 +721,14 @@ public class AiService {
             }
             
             String message = e.getMessage();
+            String thinking = THINKING_ACCUMULATOR.get().toString().trim();
             if (message != null && message.contains("sequential tool executions")) {
-                LOGGER.warn("AI exceeded tool execution limit: {}", message);
-                return new AiResult("", "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
+                LOGGER.warn("AI exceeded tool execution limit: {}. Thinking length: {}", message, thinking.length());
+                return new AiResult(thinking, "I'm trying to do too many things at once! I got stuck in a loop trying to find that for you. Maybe try being a bit more specific or check your spelling, mate.", null);
             }
 
             LOGGER.error("AI generation failed with LangChain4j", e);
-            return new AiResult("", "I'm sorry, but something went wrong while I was thinking: " + e.getMessage(), null);
+            return new AiResult(thinking, "I'm sorry, but something went wrong while I was thinking: " + e.getMessage(), null);
         } finally {
             CURRENT_USER_ID.remove();
             CURRENT_GUILD_ID.remove();

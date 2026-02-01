@@ -12,11 +12,13 @@ import com.bobbot.service.LevelUpService;
 import com.bobbot.service.PaginationService;
 import com.bobbot.service.PriceService;
 import com.bobbot.service.RoleService;
+import com.bobbot.service.WikiService;
 import com.bobbot.storage.PlayerRecord;
 import com.bobbot.util.FormatUtils;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
@@ -55,6 +57,7 @@ public class SlashCommandListener extends ListenerAdapter {
     private final RoleService roleService;
     private final ConfigService configService;
     private final PaginationService paginationService;
+    private final WikiService wikiService;
 
     /**
      * Create a new listener with dependencies.
@@ -68,6 +71,7 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param roleService role service
      * @param configService config service
      * @param paginationService pagination service
+     * @param wikiService wiki service
      */
     public SlashCommandListener(EnvConfig envConfig,
                                 LeaderboardService leaderboardService,
@@ -77,7 +81,8 @@ public class SlashCommandListener extends ListenerAdapter {
                                 AiService aiService,
                                 RoleService roleService,
                                 ConfigService configService,
-                                PaginationService paginationService) {
+                                PaginationService paginationService,
+                                WikiService wikiService) {
         this.envConfig = envConfig;
         this.leaderboardService = leaderboardService;
         this.levelUpService = levelUpService;
@@ -87,6 +92,7 @@ public class SlashCommandListener extends ListenerAdapter {
         this.roleService = roleService;
         this.configService = configService;
         this.paginationService = paginationService;
+        this.wikiService = wikiService;
     }
 
     @Override
@@ -141,6 +147,15 @@ public class SlashCommandListener extends ListenerAdapter {
                     }
                     return;
                 }
+                if ("toggle".equals(group)) {
+                    if ("ping".equals(subcommand)) {
+                        handleTogglePing(event);
+                    } else {
+                        LOGGER.debug("Unknown toggle subcommand '{}'", subcommand);
+                        event.reply("Unknown subcommand.").setEphemeral(true).queue();
+                    }
+                    return;
+                }
                 switch (subcommand != null ? subcommand : "") {
                     case "link" -> handleLink(event);
                     case "unlink" -> handleUnlink(event);
@@ -152,7 +167,8 @@ public class SlashCommandListener extends ListenerAdapter {
                     }
                 }
             } else if ("admin".equals(name)) {
-                if (!healthService.isAdmin(event.getUser().getId())) {
+                boolean isAdmin = event.getMember() != null ? healthService.isAdmin(event.getMember()) : healthService.isAdmin(event.getUser().getId());
+                if (!isAdmin) {
                     event.reply("You do not have permission to use admin commands.").setEphemeral(true).queue();
                     return;
                 }
@@ -255,6 +271,28 @@ public class SlashCommandListener extends ListenerAdapter {
         } else {
             event.reply("You don't have an OSRS account linked.").setEphemeral(true).queue();
         }
+    }
+
+    /**
+     * Handle the /os toggle ping command.
+     *
+     * @param event slash command event
+     */
+    private void handleTogglePing(SlashCommandInteractionEvent event) {
+        String type = getRequiredOption(event, "type");
+        if (type == null) return;
+
+        PlayerRecord updated = levelUpService.togglePing(event.getUser().getId(), type);
+        if (updated == null) {
+            event.reply("You haven't linked your OSRS account yet! Use `/os link` to get started.").setEphemeral(true).queue();
+            return;
+        }
+
+        boolean enabled = "leaderboard".equals(type) ? updated.isPingOnLeaderboard() : updated.isPingOnLevelUp();
+        String status = enabled ? "enabled" : "disabled";
+        String typeDisplay = "leaderboard".equals(type) ? "leaderboard updates" : "level ups";
+
+        event.reply(String.format("Pings for **%s** have been **%s**. I'll remember that next time you gain some XP!", typeDisplay, status)).queue();
     }
 
     /**
@@ -370,6 +408,12 @@ public class SlashCommandListener extends ListenerAdapter {
                     long xpToNext = OsrsXpTable.xpToNextLevel(targetStat.level(), targetStat.xp());
                     eb.addField("Next Level In", String.format("%,d XP", xpToNext), true);
                 }
+
+                String wikiUrl = wikiService.getWikiUrl(targetStat.skill());
+                eb.setDescription("**Wiki:** " + wikiUrl);
+                wikiService.getSkillSummary(targetStat.skill()).ifPresent(summary ->
+                        eb.addField("About " + targetStat.skill().displayName(), summary, false)
+                );
             }
 
             var action = event.getHook().sendMessageEmbeds(eb.build());
@@ -587,7 +631,8 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param event slash command event
      */
     private void handleAdminAiToggle(SlashCommandInteractionEvent event) {
-        if (!healthService.isAdmin(event.getUser().getId())) {
+        boolean isAdmin = event.getMember() != null ? healthService.isAdmin(event.getMember()) : healthService.isAdmin(event.getUser().getId());
+        if (!isAdmin) {
             event.reply("Only admins can toggle AI features.").setEphemeral(true).queue();
             return;
         }
@@ -677,6 +722,17 @@ public class SlashCommandListener extends ListenerAdapter {
             }
         } else if ("leaderboard".equals(subcommand)) {
             handleSetLeaderboard(event);
+        } else if ("adminrole".equals(subcommand)) {
+            String roleId = getRequiredOption(event, "role_id");
+            if (roleId != null) {
+                // Try to resolve the role to verify it exists
+                net.dv8tion.jda.api.entities.Role role = event.getGuild().getRoleById(roleId);
+                String updated = healthService.updateAdminRole(roleId);
+                String mention = role != null ? role.getAsMention() : "`" + updated + "`";
+                event.reply("Custom admin role set to " + mention + ".")
+                        .setEphemeral(true)
+                        .queue();
+            }
         }
     }
 
@@ -801,6 +857,11 @@ public class SlashCommandListener extends ListenerAdapter {
 
     private void shutdown(JDA jda, String action, int exitCode) {
         LOGGER.info("Power action '{}' requested. Shutting down JDA with exit code {}", action, exitCode);
+        boolean isRestart = exitCode == 2;
+        String announcement = isRestart 
+                ? "Logging out to hop worlds. See you in a tick! (Rebooting...)" 
+                : "World DC incoming! Bracing for impact... (Shutting down...)";
+        healthService.announceToBobsChatBlocking(jda, announcement);
         jda.shutdown();
         System.exit(exitCode);
     }

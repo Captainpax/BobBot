@@ -77,7 +77,7 @@ public class LeaderboardService {
         int rank = 1;
         for (PlayerEntry entry : skillEntries) {
             skillLbBuilder.append(String.format("`%d.` %s — lvl **%d**\n",
-                    rank++, formatLeaderboardName(entry.discordUserId(), entry.record().getUsername()), entry.skillLevel()));
+                    rank++, formatLeaderboardName(entry.discordUserId(), entry.record()), entry.skillLevel()));
         }
         eb.addField(skillEmoji(skill) + " " + skill.displayName() + " Rankings", skillLbBuilder.toString(), false);
 
@@ -93,7 +93,7 @@ public class LeaderboardService {
             int weeklyDelta = totalLevel - weeklySnapshot;
 
             overallBuilder.append(String.format("`%d.` %s — **%d** (%s | %s)\n",
-                    rank++, formatLeaderboardName(entry.discordUserId(), record.getUsername()), totalLevel, formatDelta(delta), formatDelta(weeklyDelta)));
+                    rank++, formatLeaderboardName(entry.discordUserId(), record), totalLevel, formatDelta(delta), formatDelta(weeklyDelta)));
         }
         eb.addField("🏆 Overall Leaderboard", "*Format: Rank. Name — Total (Δ Last | Δ Week)*\n" + overallBuilder.toString(), false);
 
@@ -302,15 +302,19 @@ public class LeaderboardService {
         return entries;
     }
 
-    private String formatLeaderboardName(String discordUserId, String username) {
+    private String formatLeaderboardName(String discordUserId, PlayerRecord record) {
         if (isValidDiscordId(discordUserId)) {
-            if (username != null && !username.isBlank()) {
-                return "<@" + discordUserId + "> (" + username + ")";
+            if (record.isPingOnLeaderboard()) {
+                if (record.getUsername() != null && !record.getUsername().isBlank()) {
+                    return "<@" + discordUserId + "> (" + record.getUsername() + ")";
+                }
+                return "<@" + discordUserId + ">";
+            } else {
+                return "**" + record.getUsername() + "**";
             }
-            return "<@" + discordUserId + ">";
         }
-        if (username != null && !username.isBlank()) {
-            return username;
+        if (record.getUsername() != null && !record.getUsername().isBlank()) {
+            return record.getUsername();
         }
         return "@unknown";
     }
