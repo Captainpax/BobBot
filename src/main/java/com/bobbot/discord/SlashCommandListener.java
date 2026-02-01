@@ -5,6 +5,7 @@ import com.bobbot.osrs.OsrsXpTable;
 import com.bobbot.osrs.Skill;
 import com.bobbot.osrs.SkillStat;
 import com.bobbot.service.AiService;
+import com.bobbot.service.ConfigService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
@@ -15,17 +16,25 @@ import com.bobbot.util.FormatUtils;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.Command;
+import net.dv8tion.jda.api.interactions.components.buttons.*;
+import net.dv8tion.jda.api.interactions.components.*;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * JDA listener that handles all slash command interactions.
@@ -40,6 +49,7 @@ public class SlashCommandListener extends ListenerAdapter {
     private final PriceService priceService;
     private final AiService aiService;
     private final RoleService roleService;
+    private final ConfigService configService;
 
     /**
      * Create a new listener with dependencies.
@@ -51,6 +61,7 @@ public class SlashCommandListener extends ListenerAdapter {
      * @param priceService price lookup service
      * @param aiService AI service
      * @param roleService role service
+     * @param configService config service
      */
     public SlashCommandListener(EnvConfig envConfig,
                                 LeaderboardService leaderboardService,
@@ -58,7 +69,8 @@ public class SlashCommandListener extends ListenerAdapter {
                                 HealthService healthService,
                                 PriceService priceService,
                                 AiService aiService,
-                                RoleService roleService) {
+                                RoleService roleService,
+                                ConfigService configService) {
         this.envConfig = envConfig;
         this.leaderboardService = leaderboardService;
         this.levelUpService = levelUpService;
@@ -66,6 +78,34 @@ public class SlashCommandListener extends ListenerAdapter {
         this.priceService = priceService;
         this.aiService = aiService;
         this.roleService = roleService;
+        this.configService = configService;
+    }
+
+    @Override
+    public void onCommandAutoCompleteInteraction(CommandAutoCompleteInteractionEvent event) {
+        if ("skill".equals(event.getFocusedOption().getName())) {
+            String input = event.getFocusedOption().getValue().toLowerCase(Locale.ROOT);
+            List<Command.Choice> options = Arrays.stream(Skill.values())
+                    .filter(skill -> skill.displayName().toLowerCase(Locale.ROOT).startsWith(input)
+                            || skill.name().toLowerCase(Locale.ROOT).startsWith(input))
+                    .map(skill -> new Command.Choice(skill.displayName(), skill.name().toLowerCase()))
+                    .limit(25)
+                    .collect(Collectors.toList());
+            event.replyChoices(options).queue();
+            return;
+        }
+
+        if ("admin".equals(event.getName()) && "set".equals(event.getSubcommandGroup()) && "env".equals(event.getSubcommandName())) {
+            if ("variable".equals(event.getFocusedOption().getName())) {
+                String input = event.getFocusedOption().getValue().toUpperCase(Locale.ROOT);
+                List<Command.Choice> options = configService.getSupportedVariables().stream()
+                        .filter(var -> var.startsWith(input))
+                        .map(var -> new Command.Choice(var, var))
+                        .limit(25)
+                        .collect(Collectors.toList());
+                event.replyChoices(options).queue();
+            }
+        }
     }
 
     /**
@@ -104,7 +144,6 @@ public class SlashCommandListener extends ListenerAdapter {
                     switch (subcommand != null ? subcommand : "") {
                         case "invite" -> handleInvite(event);
                         case "postleaderboard" -> handlePostLeaderboard(event);
-                        case "setleaderboard" -> handleSetLeaderboard(event);
                         case "health" -> handleHealth(event);
                         case "power" -> handlePower(event);
                         case "status" -> handleStatus(event);
@@ -242,17 +281,24 @@ public class SlashCommandListener extends ListenerAdapter {
      */
     private void handleStats(SlashCommandInteractionEvent event) {
         event.deferReply(true).queue();
+        String userId = event.getUser().getId();
+        String skillFilter = "all";
+        if (event.getOption("skill") != null) {
+            skillFilter = event.getOption("skill").getAsString().toLowerCase(Locale.ROOT);
+        }
+        sendStats(event, userId, skillFilter, true);
+    }
+
+    private void sendStats(SlashCommandInteractionEvent event, String userId, String skillFilter, boolean ephemeral) {
         try {
-            PlayerRecord record = levelUpService.refreshPlayer(event.getUser().getId());
+            PlayerRecord record = levelUpService.refreshPlayer(userId);
             if (record == null) {
-                event.getHook().sendMessage("You haven't linked a player yet. Use /os link to get started.").queue();
+                if (ephemeral) {
+                    event.getHook().sendMessage("You haven't linked a player yet. Use /os link to get started.").queue();
+                }
                 return;
             }
             List<SkillStat> stats = levelUpService.fetchSkillStats(record.getUsername());
-            String skillFilter = "all";
-            if (event.getOption("skill") != null) {
-                skillFilter = event.getOption("skill").getAsString().toLowerCase(Locale.ROOT);
-            }
 
             StringBuilder builder = new StringBuilder();
             builder.append("Stats for ").append(record.getUsername()).append(":\n");
@@ -302,7 +348,9 @@ public class SlashCommandListener extends ListenerAdapter {
                         .orElse(null);
 
                 if (targetStat == null) {
-                    event.getHook().sendMessage("Skill '" + skillFilter + "' not found.").queue();
+                    if (ephemeral) {
+                        event.getHook().sendMessage("Skill '" + skillFilter + "' not found.").queue();
+                    }
                     return;
                 }
 
@@ -317,12 +365,20 @@ public class SlashCommandListener extends ListenerAdapter {
                         true);
             }
             messages.add(current.toString());
-            for (String message : messages) {
-                event.getHook().sendMessage(message).queue();
+
+            for (int i = 0; i < messages.size(); i++) {
+                String message = messages.get(i);
+                var action = event.getHook().sendMessage(message);
+                if (ephemeral && i == messages.size() - 1) {
+                    action.addActionRow(Button.primary("share:stats:" + userId + ":" + skillFilter, "Show to all"));
+                }
+                action.queue();
             }
         } catch (IOException | InterruptedException e) {
-            LOGGER.error("Failed to fetch stats for user {}", event.getUser().getId(), e);
-            event.getHook().sendMessage("Failed to fetch your latest stats. Try again in a bit.").queue();
+            LOGGER.error("Failed to fetch stats for user {}", userId, e);
+            if (ephemeral) {
+                event.getHook().sendMessage("Failed to fetch your latest stats. Try again in a bit.").queue();
+            }
         }
     }
 
@@ -415,6 +471,29 @@ public class SlashCommandListener extends ListenerAdapter {
                 event.getHook().sendMessage("Failed to download the uploaded file.").queue();
                 return null;
             });
+        } else if ("test".equals(subcommand)) {
+            handleAdminAiTest(event);
+        }
+    }
+
+    /**
+     * Handle the /admin ai test command.
+     *
+     * @param event slash command event
+     */
+    private void handleAdminAiTest(SlashCommandInteractionEvent event) {
+        String prompt = "Hello!";
+        if (event.getOption("prompt") != null) {
+            prompt = event.getOption("prompt").getAsString();
+        }
+
+        event.deferReply(true).queue();
+        try {
+            String response = aiService.generateResponse(prompt);
+            event.getHook().sendMessage("**Prompt:** " + prompt + "\n**AI Response:** " + response).queue();
+        } catch (Exception e) {
+            LOGGER.error("AI test failed", e);
+            event.getHook().sendMessage("AI test failed: " + e.getMessage()).queue();
         }
     }
 
@@ -426,12 +505,18 @@ public class SlashCommandListener extends ListenerAdapter {
     private void handleAdminSet(SlashCommandInteractionEvent event) {
         String subcommand = event.getSubcommandName();
         if ("env".equals(subcommand)) {
-            String env = getRequiredOption(event, "value");
-            if (env != null) {
-                String updated = healthService.updateEnvironment(env);
-                event.reply("Bot environment set to " + updated + ".")
-                        .setEphemeral(true)
-                        .queue();
+            String variable = getRequiredOption(event, "variable");
+            String value = getRequiredOption(event, "value");
+            if (variable != null && value != null) {
+                try {
+                    configService.updateEnvFile(variable, value);
+                    event.reply("Updated `" + variable + "` in `.env`. This will take effect on the next boot.")
+                            .setEphemeral(true)
+                            .queue();
+                } catch (IOException e) {
+                    LOGGER.error("Failed to update .env file", e);
+                    event.reply("Failed to update `.env` file.").setEphemeral(true).queue();
+                }
             }
         } else if ("bobschat".equals(subcommand)) {
             String channelId = getRequiredOption(event, "channel_id");
@@ -446,6 +531,8 @@ public class SlashCommandListener extends ListenerAdapter {
                         .setEphemeral(true)
                         .queue();
             }
+        } else if ("leaderboard".equals(subcommand)) {
+            handleSetLeaderboard(event);
         }
     }
 

@@ -79,7 +79,12 @@ public class HiscoreClient {
             if (index >= lines.length) {
                 break;
             }
-            stats.add(parseSkillLine(skill, lines[index]));
+            try {
+                stats.add(parseSkillLine(skill, lines[index]));
+            } catch (IOException e) {
+                // If a specific skill line fails to parse (e.g. Activity instead of Skill), skip it
+                // This handles cases like Sailing (index 24) currently pointing to an Activity line
+            }
         }
         return stats;
     }

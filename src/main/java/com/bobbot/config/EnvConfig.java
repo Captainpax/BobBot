@@ -25,7 +25,8 @@ public record EnvConfig(
         Duration leaderboardInterval,
         Duration pollInterval,
         Path dataDirectory,
-        int healthPort
+        int healthPort,
+        String environment
 ) {
     private static final Logger LOGGER = LoggerFactory.getLogger(EnvConfig.class);
 
@@ -44,18 +45,20 @@ public record EnvConfig(
         Duration pollInterval = parseDuration(env, Duration.ofMinutes(5), "poll-interval", "poll_interval", "POLL_INTERVAL");
         Path dataDir = Path.of(firstEnvValue(env, "data-dir", "data_dir", "DATA_DIR").orElse("data"));
         int healthPort = parsePort(env, 8080, "health-port", "health_port", "HEALTH_PORT", "PORT");
-        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort);
+        String environment = firstEnvValue(env, "ENVIRONMENT", "environment").orElse("");
+        EnvConfig config = new EnvConfig(token, superuser, leaderboardInterval, pollInterval, dataDir, healthPort, environment);
         if (!config.hasDiscordToken()) {
             LOGGER.error("Discord token missing. Set discord-token, discord_token, or DISCORD_TOKEN to start the bot.");
         }
         LOGGER.info(
-                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}",
+                "Loaded env config: discord token from {}, superuser set: {}, leaderboard interval: {}, poll interval: {}, data dir: {}, health port: {}, environment: {}",
                 tokenEnv.map(ResolvedEnv::key).orElse("missing"),
                 !superuser.isBlank(),
                 leaderboardInterval,
                 pollInterval,
                 dataDir.toAbsolutePath(),
-                healthPort
+                healthPort,
+                environment.isBlank() ? "not set" : environment
         );
         return config;
     }

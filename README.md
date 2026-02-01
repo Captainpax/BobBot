@@ -82,6 +82,7 @@ See `template.env` for a copy/paste starter file that lists all variables with e
 - `/admin ai url <url>` — Set the local AI API URL (OpenAI-compatible).
 - `/admin ai model <model>` — Set the AI model name.
 - `/admin ai personality <file>` — Upload a `personality.txt` file to define Bob's personality.
+- `/admin ai test [prompt]` — Test the AI configuration with an optional prompt.
 - `/admin invite <target> <target_id>` — Get an invite link or info for chat installs.
 - `/admin health` — Check bot health and connectivity.
 - `/admin status <state>` — Update the bot's presence status (`online`, `busy`, `offline`).

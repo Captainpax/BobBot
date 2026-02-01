@@ -96,8 +96,12 @@ public class HealthService {
     public HealthData getHealthData(JDA jda) {
         BotSettings settings = storage.loadSettings();
         OsrsStatus osrsStatus = fetchOsrsStatus();
+        String environment = envConfig.environment();
+        if (environment == null || environment.isBlank()) {
+            environment = settings.getEnvironment();
+        }
         return new HealthData(
-                settings.getEnvironment(),
+                environment,
                 BotStatus.normalize(settings.getBotStatus()),
                 jda.getStatus().name().toLowerCase(Locale.ROOT),
                 jda.getGatewayPing(),
@@ -153,18 +157,6 @@ public class HealthService {
         storage.saveSettings(settings.withBotStatus(normalized));
         jda.getPresence().setStatus(BotStatus.toOnlineStatus(normalized));
         return normalized;
-    }
-
-    /**
-     * Update and persist the bot environment.
-     *
-     * @param environment environment name
-     * @return updated environment string
-     */
-    public String updateEnvironment(String environment) {
-        BotSettings settings = storage.loadSettings();
-        storage.saveSettings(settings.withEnvironment(environment));
-        return environment;
     }
 
     /**

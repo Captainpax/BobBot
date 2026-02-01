@@ -9,6 +9,7 @@ import com.bobbot.discord.AiMessageListener;
 import com.bobbot.health.HealthHttpServer;
 import com.bobbot.osrs.Skill;
 import com.bobbot.service.AiService;
+import com.bobbot.service.ConfigService;
 import com.bobbot.service.HealthService;
 import com.bobbot.service.LeaderboardService;
 import com.bobbot.service.LevelUpService;
@@ -58,6 +59,7 @@ public class BotApp {
         PriceService priceService = new PriceService();
         AiService aiService = new AiService(storage, envConfig.dataDirectory());
         RoleService roleService = new RoleService();
+        ConfigService configService = new ConfigService();
         HealthService healthService = new HealthService(envConfig, storage, leaderboardService);
         HealthHttpServer healthHttpServer = new HealthHttpServer(envConfig, healthService);
         healthHttpServer.start(Optional.empty());
@@ -76,7 +78,7 @@ public class BotApp {
                     .setStatus(BotStatus.toOnlineStatus(configuredStatus))
                     .setActivity(Activity.playing("OSRS levels"))
                     .addEventListeners(
-                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService),
+                            new SlashCommandListener(envConfig, leaderboardService, levelUpService, healthService, priceService, aiService, roleService, configService),
                             new ReadyNotificationListener(envConfig),
                             new MentionHealthListener(healthService),
                             new AiMessageListener(storage, aiService),
@@ -103,11 +105,7 @@ public class BotApp {
                 .addChoice("online", "online")
                 .addChoice("busy", "busy")
                 .addChoice("offline", "offline");
-        OptionData skillOption = new OptionData(OptionType.STRING, "skill", "Specific skill or 'all'", false)
-                .addChoice("all", "all");
-        for (Skill skill : Skill.values()) {
-            skillOption.addChoice(skill.displayName(), skill.name().toLowerCase());
-        }
+        OptionData skillOption = new OptionData(OptionType.STRING, "skill", "Specific skill (leave empty for all/random)", false, true);
 
         LOGGER.info("Queueing slash command registration");
         EnumSet<InteractionContextType> dmAndGuild = EnumSet.of(
@@ -135,29 +133,29 @@ public class BotApp {
                         Commands.slash("admin", "Administrative commands")
                                 .setContexts(dmAndGuild)
                                 .setIntegrationTypes(installTypes)
-                                .addSubcommands(
-                                        new SubcommandData("invite", "Get an invite link or info for chat installs")
-                                                .addOptions(inviteTarget, inviteTargetId),
-                                        new SubcommandData("postleaderboard", "Post the current OSRS leaderboard")
-                                                .addOptions(skillOption),
-                                        new SubcommandData("setleaderboard", "Set the channel for leaderboard posts")
-                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true),
-                                        new SubcommandData("health", "Check bot health and stats"),
-                                        new SubcommandData("power", "Restart or shutdown the bot")
-                                                .addOptions(powerAction),
-                                        new SubcommandData("status", "Update the bot presence status")
-                                                .addOptions(statusState),
-                                        new SubcommandData("addadmin", "Add a user to the admin list")
-                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true),
-                                        new SubcommandData("removeadmin", "Remove a user from the admin list")
-                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true)
-                                )
                                 .addSubcommandGroups(
+                                        new SubcommandGroupData("manage", "Bot management and health")
+                                                .addSubcommands(
+                                                        new SubcommandData("invite", "Get an invite link or info for chat installs")
+                                                                .addOptions(inviteTarget, inviteTargetId),
+                                                        new SubcommandData("health", "Check bot health and stats"),
+                                                        new SubcommandData("power", "Restart or shutdown the bot")
+                                                                .addOptions(powerAction),
+                                                        new SubcommandData("status", "Update the bot presence status")
+                                                                .addOptions(statusState),
+                                                        new SubcommandData("addadmin", "Add a user to the admin list")
+                                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true),
+                                                        new SubcommandData("removeadmin", "Remove a user from the admin list")
+                                                                .addOption(OptionType.STRING, "user_id", "Discord user ID", true)
+                                                ),
                                         new SubcommandGroupData("set", "Update bot settings")
                                                 .addSubcommands(
-                                                        new SubcommandData("env", "Bot environment setting")
-                                                                .addOption(OptionType.STRING, "value", "Bot environment setting", true),
+                                                        new SubcommandData("env", "Set environment variable for next boot")
+                                                                .addOption(OptionType.STRING, "variable", "The variable name", true, true)
+                                                                .addOption(OptionType.STRING, "value", "The value to set", true),
                                                         new SubcommandData("bobschat", "Main channel for Bob's pings")
+                                                                .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true),
+                                                        new SubcommandData("leaderboard", "Set the channel for leaderboard posts")
                                                                 .addOption(OptionType.STRING, "channel_id", "Discord channel ID", true)
                                                 ),
                                         new SubcommandGroupData("ai", "AI configuration")
@@ -167,7 +165,14 @@ public class BotApp {
                                                         new SubcommandData("model", "Set the AI model name")
                                                                 .addOption(OptionType.STRING, "model", "Model name", true),
                                                         new SubcommandData("personality", "Upload a personality.txt file")
-                                                                .addOption(OptionType.ATTACHMENT, "file", "The personality.txt file", true)
+                                                                .addOption(OptionType.ATTACHMENT, "file", "The personality.txt file", true),
+                                                        new SubcommandData("test", "Test the AI configuration")
+                                                                .addOption(OptionType.STRING, "prompt", "Test prompt (default: Hello!)", false)
+                                                ),
+                                        new SubcommandGroupData("osrs", "OSRS related administrative tasks")
+                                                .addSubcommands(
+                                                        new SubcommandData("postleaderboard", "Post the current OSRS leaderboard")
+                                                                .addOptions(skillOption)
                                                 )
                                 )
                 )
